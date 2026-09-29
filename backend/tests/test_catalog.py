@@ -357,13 +357,13 @@ async def test_duplicate_product_slug_rejected(async_client: AsyncClient, create
 async def test_unauthenticated_can_list_and_get_product(
     async_client: AsyncClient, create_user_helper, auth_headers_helper
 ):
-    """Public/unauthenticated users can query the product catalog."""
+    """Public/unauthenticated users can query active products in catalog."""
     seller = await create_user_helper(email="seller_pub@example.com", role=UserRole.SELLER)
     headers = auth_headers_helper(seller)
 
     create_res = await async_client.post(
         "/api/v1/products",
-        json={"name": "Trench Coat", "base_price": "450.00"},
+        json={"name": "Trench Coat", "base_price": "450.00", "status": "ACTIVE"},
         headers=headers,
     )
     product_id = create_res.json()["id"]
@@ -377,6 +377,111 @@ async def test_unauthenticated_can_list_and_get_product(
     get_res = await async_client.get(f"/api/v1/products/{product_id}")
     assert get_res.status_code == 200
     assert get_res.json()["name"] == "Trench Coat"
+
+
+@pytest.mark.asyncio
+async def test_public_catalog_does_not_expose_draft_or_archived_products(
+    async_client: AsyncClient, create_user_helper, auth_headers_helper
+):
+    """Public unauthenticated access strictly filters out DRAFT and ARCHIVED products."""
+    seller = await create_user_helper(email="seller_visibility@example.com", role=UserRole.SELLER)
+    headers = auth_headers_helper(seller)
+
+    # 1. Create ACTIVE product
+    act_res = await async_client.post(
+        "/api/v1/products",
+        json={"name": "Active Summer Dress", "base_price": "150.00", "status": "ACTIVE"},
+        headers=headers,
+    )
+    active_id = act_res.json()["id"]
+
+    # 2. Create DRAFT product
+    draft_res = await async_client.post(
+        "/api/v1/products",
+        json={"name": "Draft Winter Coat", "base_price": "300.00", "status": "DRAFT"},
+        headers=headers,
+    )
+    draft_id = draft_res.json()["id"]
+
+    # 3. Create ARCHIVED product
+    arch_res = await async_client.post(
+        "/api/v1/products",
+        json={"name": "Archived Vintage Boots", "base_price": "180.00", "status": "ARCHIVED"},
+        headers=headers,
+    )
+    archived_id = arch_res.json()["id"]
+
+    # Public GET /products must only contain active_id
+    public_list = await async_client.get("/api/v1/products")
+    assert public_list.status_code == 200
+    returned_ids = [p["id"] for p in public_list.json()]
+    assert active_id in returned_ids
+    assert draft_id not in returned_ids
+    assert archived_id not in returned_ids
+
+    # Public request explicitly asking for DRAFT or ARCHIVED must NOT expose them
+    draft_query = await async_client.get("/api/v1/products?status=DRAFT")
+    assert draft_query.status_code == 200
+    assert not any(p["id"] == draft_id for p in draft_query.json())
+
+    archived_query = await async_client.get("/api/v1/products?status=ARCHIVED")
+    assert archived_query.status_code == 200
+    assert not any(p["id"] == archived_id for p in archived_query.json())
+
+    # Direct GET by ID for DRAFT or ARCHIVED returns 404 to public
+    assert (await async_client.get(f"/api/v1/products/{draft_id}")).status_code == 404
+    assert (await async_client.get(f"/api/v1/products/{archived_id}")).status_code == 404
+
+    # Variants and media for DRAFT product return 404 to public
+    assert (await async_client.get(f"/api/v1/products/{draft_id}/variants")).status_code == 404
+    assert (await async_client.get(f"/api/v1/products/{draft_id}/media")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_seller_and_admin_product_visibility_access(
+    async_client: AsyncClient, create_user_helper, auth_headers_helper
+):
+    """Sellers can view their own non-active products; admins can view all statuses."""
+    seller1 = await create_user_helper(email="seller_vis_1@example.com", role=UserRole.SELLER)
+    seller2 = await create_user_helper(email="seller_vis_2@example.com", role=UserRole.SELLER)
+    admin = await create_user_helper(email="admin_vis@example.com", role=UserRole.ADMIN)
+
+    s1_headers = auth_headers_helper(seller1)
+    s2_headers = auth_headers_helper(seller2)
+    admin_headers = auth_headers_helper(admin)
+
+    # Seller 1 creates DRAFT product
+    draft_res = await async_client.post(
+        "/api/v1/products",
+        json={"name": "Seller 1 Private Draft", "base_price": "90.00", "status": "DRAFT"},
+        headers=s1_headers,
+    )
+    draft_id = draft_res.json()["id"]
+
+    # Seller 1 can access their own draft directly
+    s1_get = await async_client.get(f"/api/v1/products/{draft_id}", headers=s1_headers)
+    assert s1_get.status_code == 200
+    assert s1_get.json()["id"] == draft_id
+
+    # Seller 1 can list their own products including drafts
+    s1_list = await async_client.get(f"/api/v1/products?seller_id={seller1.id}", headers=s1_headers)
+    assert s1_list.status_code == 200
+    assert any(p["id"] == draft_id for p in s1_list.json())
+
+    # Seller 2 cannot access Seller 1's draft product -> 404
+    s2_get = await async_client.get(f"/api/v1/products/{draft_id}", headers=s2_headers)
+    assert s2_get.status_code == 404
+
+    # Admin can access Seller 1's draft product directly
+    admin_get = await async_client.get(f"/api/v1/products/{draft_id}", headers=admin_headers)
+    assert admin_get.status_code == 200
+    assert admin_get.json()["id"] == draft_id
+
+    # Admin can list all products with status=DRAFT filter
+    admin_list = await async_client.get("/api/v1/products?status=DRAFT", headers=admin_headers)
+    assert admin_list.status_code == 200
+    assert any(p["id"] == draft_id for p in admin_list.json())
+
 
 
 # ==============================================================================
@@ -579,9 +684,10 @@ async def test_seller_can_manage_own_product_media(
     assert media_res.json()["object_key"] == "products/jacket_front.webp"
 
     # List media
-    list_res = await async_client.get(f"/api/v1/products/{product_id}/media")
+    list_res = await async_client.get(f"/api/v1/products/{product_id}/media", headers=headers)
     assert list_res.status_code == 200
     assert len(list_res.json()) == 1
+
 
     # Update media
     patch_res = await async_client.patch(

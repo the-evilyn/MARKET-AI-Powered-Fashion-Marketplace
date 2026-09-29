@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import require_roles
+from app.modules.auth.dependencies import get_optional_current_user, require_roles
 from app.modules.catalog.enums import ProductStatus
 from app.modules.catalog.models import Product
 from app.modules.catalog.schemas import (
@@ -40,6 +40,20 @@ def check_product_ownership(product: Product, current_user: User) -> None:
         )
 
 
+def check_product_read_access(product: Product, current_user: Optional[User]) -> None:
+    """Ensure non-ACTIVE or inactive products are only readable by owner seller or ADMIN."""
+    is_publicly_visible = (product.status == ProductStatus.ACTIVE and product.is_active is True)
+    if not is_publicly_visible:
+        is_owner = (current_user is not None and current_user.id == product.seller_id)
+        is_admin = (current_user is not None and current_user.role == UserRole.ADMIN)
+        if not (is_owner or is_admin):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Product with id '{product.id}' not found.",
+            )
+
+
+
 # ==============================================================================
 # Product Endpoints
 # ==============================================================================
@@ -54,8 +68,19 @@ async def list_products(
     status_filter: Optional[ProductStatus] = Query(default=None, alias="status"),
     is_active: Optional[bool] = Query(default=None),
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> List[ProductResponse]:
-    """Retrieve catalog products with optional filtering."""
+    """Retrieve catalog products. Public access is restricted to ACTIVE and is_active=true."""
+    if current_user and current_user.role == UserRole.ADMIN:
+        effective_status = status_filter
+        effective_is_active = is_active
+    elif current_user and current_user.role == UserRole.SELLER and seller_id == current_user.id:
+        effective_status = status_filter
+        effective_is_active = is_active
+    else:
+        effective_status = ProductStatus.ACTIVE
+        effective_is_active = True
+
     products = await ProductService.get_all(
         db=db,
         skip=skip,
@@ -63,8 +88,8 @@ async def list_products(
         seller_id=seller_id,
         brand_id=brand_id,
         category_id=category_id,
-        status_filter=status_filter,
-        is_active=is_active,
+        status_filter=effective_status,
+        is_active=effective_is_active,
     )
     return [ProductResponse.model_validate(p) for p in products]
 
@@ -73,6 +98,7 @@ async def list_products(
 async def get_product(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> ProductDetailResponse:
     """Retrieve full product details including variants, media, brand, and category."""
     product = await ProductService.get_by_id(db, product_id, load_details=True)
@@ -81,7 +107,9 @@ async def get_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Product with id '{product_id}' not found.",
         )
+    check_product_read_access(product, current_user)
     return ProductDetailResponse.model_validate(product)
+
 
 
 @router.post(
@@ -152,6 +180,7 @@ async def delete_product(
 async def list_variants(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> List[ProductVariantResponse]:
     """Retrieve all purchasable SKU variants for a product."""
     product = await ProductService.get_by_id(db, product_id)
@@ -160,8 +189,10 @@ async def list_variants(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Product with id '{product_id}' not found.",
         )
+    check_product_read_access(product, current_user)
     variants = await VariantService.get_all_by_product(db, product_id)
     return [ProductVariantResponse.model_validate(v) for v in variants]
+
 
 
 @router.post(
@@ -262,6 +293,7 @@ async def delete_variant(
 async def list_media(
     product_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> List[ProductMediaResponse]:
     """Retrieve all media assets for a product ordered by sequence."""
     product = await ProductService.get_by_id(db, product_id)
@@ -270,8 +302,10 @@ async def list_media(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Product with id '{product_id}' not found.",
         )
+    check_product_read_access(product, current_user)
     media_items = await MediaService.get_all_by_product(db, product_id)
     return [ProductMediaResponse.model_validate(m) for m in media_items]
+
 
 
 @router.post(
