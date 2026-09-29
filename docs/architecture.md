@@ -39,9 +39,46 @@ Cross-cutting infrastructure concerns reside in `app/core/`:
 
 ---
 
-## 3. AI-Readiness Strategy
+## 3. Product Catalog & Media Foundation (Phase 2)
+
+### Domain Conceptual Model
+```
+Seller (User: role=SELLER)
+  └── Product (status: DRAFT | ACTIVE | ARCHIVED, base_price: Numeric)
+        ├── Brand (optional foreign key)
+        ├── Category (hierarchical taxonomy with parent_id)
+        ├── ProductVariant (SKU-level: size, color, price, compare_at_price)
+        └── ProductMedia (media_type: IMAGE | VIDEO | LOOKBOOK, object_key / url)
+```
+
+### Key Architectural Decisions
+
+1. **Brand Modality**:
+   - `brand_id` is an optional foreign key (`nullable=True`) with `ON DELETE SET NULL`. This architectural decision accommodates independent boutique creators, custom tailors, and emerging sustainable fashion lines that lack formal brand registrations.
+2. **Category Hierarchy**:
+   - Modeled via self-referential `parent_id` foreign key referencing `categories.id` (`ON DELETE SET NULL`).
+   - Prevents self-parenting (`parent_id != id`) and circular ancestry traversals in service logic, supporting arbitrary tree depth (e.g. `Women` &rarr; `Dresses` &rarr; `Evening Dresses`).
+3. **Monetary Precision**:
+   - Currency amounts (`base_price`, `variant.price`, `variant.compare_at_price`) strictly utilize PostgreSQL `NUMERIC(10, 2)` and Python `Decimal`. Floating-point arithmetic is prohibited to prevent rounding inaccuracies in pricing calculations.
+   - Enforced by database `CHECK` constraints (`price >= 0`) and Pydantic model validators.
+4. **SKU-Level Variants**:
+   - Purchasable combinations (color, size) are modeled as discrete `ProductVariant` entities with globally unique `sku` codes.
+   - Variants inherit parent product lifecycle and cascade on delete.
+5. **Object Storage-First Media Strategy**:
+   - Binary media files are never stored in PostgreSQL.
+   - Images and videos reside in S3-compatible MinIO object storage (`fashion-media` bucket). The database records metadata, CDN URLs, accessibility alt-text, sort sequence, and primary hero flags.
+   - Schema is prepared for downstream AI pipelines (e.g. CLIP feature vectors, background matting, virtual try-on masks).
+6. **Multi-Vendor Ownership Enforcement**:
+   - `SELLER` permissions strictly enforce row-level ownership: sellers can only mutate products, variants, and media where `product.seller_id == current_user.id`.
+   - `ADMIN` retains platform-wide catalog governance.
+   - `CUSTOMER` and unauthenticated users are restricted to read operations on active catalog items.
+
+---
+
+## 4. AI-Readiness Strategy
 
 The foundation is purposefully designed for seamless extension into AI capabilities:
 1. **Vector Embeddings**: PostgreSQL is initialized with `pgvector`, providing native vector indexes (HNSW / IVFFlat) for similarity search and visual fashion recommendations.
 2. **Media Pipelines**: MinIO provides an S3-compatible asset store to handle fashion garment photography, segmentation masks, user reference photos, and generative try-on assets.
 3. **Async Performance**: Asynchronous Python (FastAPI + asyncpg) handles long-polling or webhook notifications from asynchronous AI inference workers cleanly.
+

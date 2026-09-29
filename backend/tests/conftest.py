@@ -13,6 +13,14 @@ from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.users.enums import UserRole
 from app.modules.users.models import User
+from app.modules.catalog.models import (  # noqa: F401
+    Brand,
+    Category,
+    Product,
+    ProductVariant,
+    ProductMedia,
+)
+
 
 # In-memory SQLite async engine for isolated test runs
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"

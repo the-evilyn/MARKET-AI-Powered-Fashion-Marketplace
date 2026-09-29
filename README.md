@@ -4,12 +4,12 @@ An AI-driven fashion marketplace platform engineered with a clean modular-monoli
 
 ---
 
-## Current Status: Phase 1 — Authentication & Identity
+## Current Status: Phase 2 — Product Catalog & Media Foundation
 
 > [!IMPORTANT]
-> **Phase 1 Scope**: Implements a production-quality identity and authentication foundation for the multi-vendor marketplace.
-> Roles supported: `CUSTOMER`, `SELLER`, and `ADMIN`.
-> Marketplace business features (Catalog, Cart, Orders, Payments, Reviews, AI recommendation engines) remain strictly deferred to subsequent phases.
+> **Phase 2 Scope**: Implements the multi-vendor catalog domain model, hierarchical category taxonomy, brand registry, SKU-level product variants, and object storage-compatible product media metadata.
+> - **Ownership & RBAC**: Sellers can create products and manage only their own listings, variants, and media. Admins manage global brands, category trees, and platform catalog moderation. Customers and unauthenticated shoppers have read-only access to active catalog listings.
+> - **Scope Boundaries**: Marketplace business features (Cart, Checkout, Orders, Payments, Reviews, Wishlist, Search Engine, Recommendations, AI features, Inventory quantities) remain strictly deferred to subsequent phases.
 
 ---
 
@@ -21,15 +21,21 @@ The system follows a **clean modular-monolith** pattern designed to scale withou
 AI Fashion Marketplace
 ├── backend/                  # FastAPI Application (Modular Monolith)
 │   ├── app/
-│   │   ├── api/v1/           # API version 1 routing (health, auth, users)
+│   │   ├── api/v1/           # API version 1 routing (health, auth, users, brands, categories, products)
 │   │   ├── core/             # Cross-cutting infrastructure (config, DB, Redis, storage, security)
 │   │   └── modules/          # Isolated domain modules
 │   │       ├── health/       # Health and readiness diagnostics
 │   │       ├── auth/         # Authentication endpoints, schemas, dependencies
-│   │       └── users/        # User entity, schemas, service layer, enums
+│   │       ├── users/        # User entity, schemas, service layer, enums
+│   │       └── catalog/      # Brands, Categories, Products, Variants, Media
+│   │           ├── routes/   # Modular domain routes (brands, categories, products)
+│   │           ├── models.py # SQLAlchemy models (Brand, Category, Product, ProductVariant, ProductMedia)
+│   │           ├── schemas.py# Pydantic validation schemas
+│   │           ├── service.py# Business services with seller ownership & validation
+│   │           └── enums.py  # ProductStatus and MediaType
 │   ├── alembic/              # Database schema migrations
-│   │   └── versions/         # 0001_create_users_table.py
-│   ├── tests/                # Automated pytest suite (health, config, auth, roles)
+│   │   └── versions/         # 0001_create_users_table.py, 0002_create_catalog_tables.py
+│   ├── tests/                # Automated pytest suite (48 passing tests)
 │   └── Dockerfile            # Container definition
 ├── frontend/                 # Next.js App Router Application
 │   ├── src/app/              # Pages, layout, and Tailwind CSS UI
@@ -53,42 +59,88 @@ AI Fashion Marketplace
 
 ---
 
-## Authentication & Identity (Phase 1)
+## Catalog Domain & Media Foundation (Phase 2)
 
-### User Model Specification
+### Domain Entities
 
-| Field | Type | Attributes | Description |
+1. **Brand**:
+   - Fashion labels and designers (`id`, `name`, `slug`, `description`, `logo_url`, `is_active`, timestamps).
+   - Slugs are normalized and unique. Managed by `ADMIN`.
+2. **Category**:
+   - Hierarchical category taxonomy supporting unlimited tree depth via self-referencing `parent_id`.
+   - Prevents self-parenting and circular ancestor relationships. Slugs are normalized and unique. Managed by `ADMIN`.
+3. **Product**:
+   - Multi-vendor catalog listing (`id`, `seller_id`, `brand_id`, `category_id`, `name`, `slug`, `description`, `status`, `base_price`, `currency`, `is_active`, timestamps).
+   - `seller_id` references `users.id` (`SELLER` role).
+   - `brand_id` is optional (`nullable=True`) to support independent boutique and bespoke handmade fashion.
+   - `category_id` is optional (`nullable=True`) for draft flexibility.
+   - `status`: Enum (`DRAFT`, `ACTIVE`, `ARCHIVED`).
+   - `base_price`: Decimal/Numeric (never float) with check constraint `base_price >= 0`.
+4. **ProductVariant**:
+   - Purchasable SKU-level variation combinations (e.g. Size / Color combinations).
+   - `sku` is globally unique. `price` is non-negative Decimal.
+   - Optional `compare_at_price` validated to ensure `compare_at_price >= price`.
+   - Bound to parent product with `CASCADE` delete.
+5. **ProductMedia**:
+   - Media asset metadata (`IMAGE`, `VIDEO`, `LOOKBOOK`).
+   - Stores S3/MinIO `object_key` or `url` without storing binary blobs in PostgreSQL.
+   - Supports sequence ordering (`sort_order`) and hero indicator (`is_primary`).
+   - Prepared for future AI visual search and CLIP/vector embeddings.
+
+### Authorization & Ownership Matrix
+
+| Resource | Public / Customer | Seller | Admin |
 | :--- | :--- | :--- | :--- |
-| `id` | `UUID` | Primary Key, default `uuid4` | Unique account identifier |
-| `email` | `VARCHAR(255)` | Unique, Indexed, Not Null | Normalized lowercase email |
-| `password_hash` | `VARCHAR(255)` | Not Null | Salted Argon2id hash |
-| `first_name` | `VARCHAR(100)` | Not Null | Given name |
-| `last_name` | `VARCHAR(100)` | Not Null | Family name |
-| `role` | `VARCHAR(32)` | Indexed, Not Null | `CUSTOMER`, `SELLER`, `ADMIN` |
-| `is_active` | `BOOLEAN` | Default `true`, Not Null | Account active status |
-| `is_verified` | `BOOLEAN` | Default `false`, Not Null | Email verification status |
-| `created_at` | `TIMESTAMPTZ` | Default `now()`, Not Null | Account creation timestamp |
-| `updated_at` | `TIMESTAMPTZ` | Default `now()`, Not Null | Last update timestamp |
-| `last_login_at` | `TIMESTAMPTZ` | Nullable | Last successful login |
+| **Brands** | Read active (`GET`) | Read active (`GET`) | Full CRUD (`POST`, `PATCH`, `DELETE`) |
+| **Categories** | Read active (`GET`) | Read active (`GET`) | Full CRUD (`POST`, `PATCH`, `DELETE`) |
+| **Products** | Read active (`GET`) | Create; Modify/Delete **own** listings | Full CRUD on any listing |
+| **Variants** | Read (`GET`) | Create/Modify/Delete on **own** products | Full CRUD on any variant |
+| **Media** | Read (`GET`) | Create/Modify/Delete on **own** products | Full CRUD on any media |
 
-### Security Measures
+---
 
-* **Password Hashing**: OWASP-recommended Argon2id (`time_cost=2`, `memory_cost=64MB`, `parallelism=1`). Plaintext passwords are never stored.
-* **Token Security**: Cryptographically signed HMAC-SHA256 JWT access tokens with configurable expiration (`JWT_ACCESS_EXPIRE_MINUTES`). Secrets are strictly loaded from environment variables.
-* **Safe Error Handling**: Authentication endpoints return unified, non-enumerating credentials errors (`"Invalid email or password"`) preventing account existence disclosure.
-* **Role-Based Access Control**: Reusable dependencies (`get_current_active_user`, `require_roles`) enforce role permissions at the route level.
+## API Endpoints
 
-### API Endpoints
+### Catalog Endpoints (Phase 2)
+
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/api/v1/brands` | No | List brands with optional active filtering |
+| `GET` | `/api/v1/brands/{id}` | No | Get single brand by UUID |
+| `POST` | `/api/v1/brands` | ADMIN | Create brand |
+| `PATCH` | `/api/v1/brands/{id}` | ADMIN | Update brand |
+| `DELETE` | `/api/v1/brands/{id}` | ADMIN | Delete brand |
+| `GET` | `/api/v1/categories` | No | List categories with parent filtering |
+| `GET` | `/api/v1/categories/{id}` | No | Get single category by UUID |
+| `POST` | `/api/v1/categories` | ADMIN | Create root or child category |
+| `PATCH` | `/api/v1/categories/{id}` | ADMIN | Update category or hierarchy |
+| `DELETE` | `/api/v1/categories/{id}` | ADMIN | Delete category |
+| `GET` | `/api/v1/products` | No | List products with brand/category/seller filters |
+| `GET` | `/api/v1/products/{id}` | No | Get detailed product (with variants & media) |
+| `POST` | `/api/v1/products` | SELLER, ADMIN | Create product listing (bound to seller) |
+| `PATCH` | `/api/v1/products/{id}` | Owner SELLER, ADMIN | Update product details |
+| `DELETE` | `/api/v1/products/{id}` | Owner SELLER, ADMIN | Delete product (cascades variants & media) |
+| `GET` | `/api/v1/products/{id}/variants` | No | List SKU variants for a product |
+| `POST` | `/api/v1/products/{id}/variants` | Owner SELLER, ADMIN | Add SKU variant to product |
+| `PATCH` | `/api/v1/products/{id}/variants/{v_id}` | Owner SELLER, ADMIN | Update SKU variant |
+| `DELETE` | `/api/v1/products/{id}/variants/{v_id}` | Owner SELLER, ADMIN | Delete SKU variant |
+| `GET` | `/api/v1/products/{id}/media` | No | List media assets for a product |
+| `POST` | `/api/v1/products/{id}/media` | Owner SELLER, ADMIN | Attach media asset metadata |
+| `PATCH` | `/api/v1/products/{id}/media/{m_id}` | Owner SELLER, ADMIN | Update media metadata |
+| `DELETE` | `/api/v1/products/{id}/media/{m_id}` | Owner SELLER, ADMIN | Remove media asset |
+
+### Authentication & System Endpoints (Phase 1 & 0)
 
 | Method | Path | Auth Required | Description |
 | :--- | :--- | :---: | :--- |
 | `POST` | `/api/v1/auth/register` | No | Self-register as `CUSTOMER` or `SELLER` |
 | `POST` | `/api/v1/auth/login` | No | Authenticate with email/password; returns JWT |
-| `POST` | `/api/v1/auth/logout` | Bearer Token | Invalidate current session |
+| `POST` | `/api/v1/auth/logout` | Bearer Token | Invalidate current session (stateless) |
 | `GET` | `/api/v1/users/me` | Bearer Token | Get profile of authenticated user |
 | `GET` | `/api/v1/health` | No | Service health check |
 | `GET` | `/api/v1/health/ready` | No | Backing dependencies readiness probe |
 | `GET` | `/api/v1/health/live` | No | Container liveness probe |
+
 
 ---
 

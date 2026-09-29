@@ -10,6 +10,14 @@ from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
 from app.modules.users.models import User  # noqa: F401
+from app.modules.catalog.models import (  # noqa: F401
+    Brand,
+    Category,
+    Product,
+    ProductVariant,
+    ProductMedia,
+)
+
 
 config = context.config
 
