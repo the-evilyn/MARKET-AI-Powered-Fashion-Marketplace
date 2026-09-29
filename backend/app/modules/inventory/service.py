@@ -21,7 +21,7 @@ class InventoryService:
         """Fetch InventoryItem by variant_id, optionally acquiring an exclusive row-level lock."""
         stmt = select(InventoryItem).where(InventoryItem.variant_id == variant_id)
         if for_update:
-            stmt = stmt.with_for_update()
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 

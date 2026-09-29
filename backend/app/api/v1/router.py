@@ -6,6 +6,8 @@ from app.modules.catalog.routes.brands import router as brands_router
 from app.modules.catalog.routes.categories import router as categories_router
 from app.modules.catalog.routes.products import router as products_router
 from app.modules.inventory.routes import router as inventory_router
+from app.modules.cart.routes import router as cart_router
+from app.modules.orders.routes import router as orders_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -17,3 +19,5 @@ api_v1_router.include_router(brands_router)
 api_v1_router.include_router(categories_router)
 api_v1_router.include_router(products_router)
 api_v1_router.include_router(inventory_router)
+api_v1_router.include_router(cart_router)
+api_v1_router.include_router(orders_router)

@@ -4,12 +4,12 @@ An AI-driven fashion marketplace platform engineered with a clean modular-monoli
 
 ---
 
-## Current Status: Phase 2 — Product Catalog & Media Foundation
+## Current Status: Phase 4 — Cart & Checkout Foundation
 
 > [!IMPORTANT]
-> **Phase 2 Scope**: Implements the multi-vendor catalog domain model, hierarchical category taxonomy, brand registry, SKU-level product variants, and object storage-compatible product media metadata.
-> - **Ownership & RBAC**: Sellers can create products and manage only their own listings, variants, and media. Admins manage global brands, category trees, and platform catalog moderation. Customers and unauthenticated shoppers have read-only access to active catalog listings.
-> - **Scope Boundaries**: Marketplace business features (Cart, Checkout, Orders, Payments, Reviews, Wishlist, Search Engine, Recommendations, AI features, Inventory quantities) remain strictly deferred to subsequent phases.
+> **Phase 4 Scope**: Implements customer shopping cart persistence (`Cart`, `CartItem`), transactional checkout with row-level inventory locking, price snapshotting, and historical order record preservation (`Order`, `OrderItem`).
+> - **Ownership & RBAC**: Customer carts and checkout are restricted strictly to authenticated `CUSTOMER` accounts. Sellers and Admins cannot manipulate customer carts through customer APIs.
+> - **Scope Boundaries**: Payments and payment gateway integration, seller/admin dashboards, search engines, and AI features remain strictly deferred to subsequent phases.
 
 ---
 
@@ -21,21 +21,18 @@ The system follows a **clean modular-monolith** pattern designed to scale withou
 AI Fashion Marketplace
 ├── backend/                  # FastAPI Application (Modular Monolith)
 │   ├── app/
-│   │   ├── api/v1/           # API version 1 routing (health, auth, users, brands, categories, products)
+│   │   ├── api/v1/           # API version 1 routing
 │   │   ├── core/             # Cross-cutting infrastructure (config, DB, Redis, storage, security)
 │   │   └── modules/          # Isolated domain modules
 │   │       ├── health/       # Health and readiness diagnostics
 │   │       ├── auth/         # Authentication endpoints, schemas, dependencies
 │   │       ├── users/        # User entity, schemas, service layer, enums
-│   │       └── catalog/      # Brands, Categories, Products, Variants, Media
-│   │           ├── routes/   # Modular domain routes (brands, categories, products)
-│   │           ├── models.py # SQLAlchemy models (Brand, Category, Product, ProductVariant, ProductMedia)
-│   │           ├── schemas.py# Pydantic validation schemas
-│   │           ├── service.py# Business services with seller ownership & validation
-│   │           └── enums.py  # ProductStatus and MediaType
-│   ├── alembic/              # Database schema migrations
-│   │   └── versions/         # 0001_create_users_table.py, 0002_create_catalog_tables.py
-│   ├── tests/                # Automated pytest suite (48 passing tests)
+│   │       ├── catalog/      # Brands, Categories, Products, Variants, Media
+│   │       ├── inventory/    # Stock on hand, reservations, availability, row locking
+│   │       ├── cart/         # Shopping cart, line items, subtotal calculation
+│   │       └── orders/       # Order snapshot preservation, checkout transaction
+│   ├── alembic/              # Database schema migrations (0001 - 0005)
+│   ├── tests/                # Automated pytest suite (92 passing tests)
 │   └── Dockerfile            # Container definition
 ├── frontend/                 # Next.js App Router Application
 │   ├── src/app/              # Pages, layout, and Tailwind CSS UI
@@ -128,6 +125,32 @@ AI Fashion Marketplace
 | `POST` | `/api/v1/products/{id}/media` | Owner SELLER, ADMIN | Attach media asset metadata |
 | `PATCH` | `/api/v1/products/{id}/media/{m_id}` | Owner SELLER, ADMIN | Update media metadata |
 | `DELETE` | `/api/v1/products/{id}/media/{m_id}` | Owner SELLER, ADMIN | Remove media asset |
+
+### Inventory Endpoints (Phase 3)
+
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/api/v1/inventory/variants/{id}` | Owner SELLER, ADMIN | Get SKU inventory details (on hand, reserved, available) |
+| `POST` | `/api/v1/inventory/variants/{id}` | Owner SELLER, ADMIN | Initialize inventory item for a variant |
+| `PATCH` | `/api/v1/inventory/variants/{id}` | Owner SELLER, ADMIN | Update stock quantities or low stock threshold |
+
+### Cart Endpoints (Phase 4)
+
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/api/v1/cart` | CUSTOMER | Get active customer cart with calculated subtotal & items |
+| `POST` | `/api/v1/cart/items` | CUSTOMER | Add item or increment quantity in active cart |
+| `PATCH` | `/api/v1/cart/items/{id}` | CUSTOMER | Update item quantity in active cart |
+| `DELETE` | `/api/v1/cart/items/{id}` | CUSTOMER | Remove item from active cart |
+| `DELETE` | `/api/v1/cart` | CUSTOMER | Clear all items from active cart |
+
+### Checkout & Orders Endpoints (Phase 4)
+
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/checkout` | CUSTOMER | Atomic checkout with row locking; creates order in PENDING_PAYMENT |
+| `GET` | `/api/v1/orders` | CUSTOMER | List authenticated customer order history |
+| `GET` | `/api/v1/orders/{id}` | CUSTOMER | Get customer order details with immutable historical snapshots |
 
 ### Authentication & System Endpoints (Phase 1 & 0)
 
@@ -240,7 +263,7 @@ Execute the automated test suite with pytest:
 pytest -v backend
 ```
 
-Tests cover 23 test cases:
+Tests cover 92 automated test cases across all implemented domains:
 * Password hashing behavior (Argon2id uniqueness, salting, verification)
 * JWT creation, claims encoding, expiration, and tampering validation
 * Successful user registration (`CUSTOMER` and `SELLER`)
@@ -251,6 +274,16 @@ Tests cover 23 test cases:
 * Inactive account lockout handling
 * Authenticated and unauthenticated `/api/v1/users/me`
 * Role-based authorization (`require_roles`)
+* Catalog Brand, Category, Product, Variant, and Media CRUD with role restrictions
+* Public catalog filtering (only active products with active variants exposed)
+* Variant `compare_at_price >= price` validation and Decimal precision
+* SKU-level inventory tracking (`quantity_on_hand`, `quantity_reserved`, `quantity_available`)
+* Low stock threshold alerts and public variant `is_in_stock` projection
+* Inventory reservation, release, and row-level locking (`SELECT ... FOR UPDATE`)
+* Active customer cart isolation, item addition, quantity updates, and cart clearing
+* Cart validation against inactive, draft, or archived products and insufficient stock
+* Transactional checkout with row-level locks, stock deduction, and atomic rollback on contention
+* Immutable order line snapshots (`product_name`, `sku`, `unit_price`, `quantity`, `line_total`)
 * Health, readiness, and liveness endpoints
 
 ### Database Migration Validation
@@ -277,7 +310,8 @@ npm run build
 
 * [x] **Phase 0: Infrastructure & Core Foundation**
 * [x] **Phase 1: Authentication & Identity** (User model, JWT, Argon2id, roles: CUSTOMER/SELLER/ADMIN)
-* [ ] **Phase 2: Product Catalog & Media Management** (PostgreSQL + MinIO storage)
-* [ ] **Phase 3: Search & Discovery** (Meilisearch + pgvector embeddings)
-* [ ] **Phase 4: Cart, Checkout & Orders**
-* [ ] **Phase 5: AI Recommendations & Virtual Try-On Integration**
+* [x] **Phase 2: Product Catalog & Media Foundation** (PostgreSQL + MinIO storage)
+* [x] **Phase 3: Inventory & Stock Management Foundation** (SKU inventory, availability, row-level locking)
+* [x] **Phase 4: Cart & Checkout Foundation** (Cart, atomic checkout, inventory deduction, order snapshots)
+* [ ] **Phase 5: Payments & Order Processing** (Stripe/Payment gateway integration, webhooks)
+* [ ] **Phase 6: Search & AI Recommendations** (Meilisearch + pgvector embeddings, visual search)
