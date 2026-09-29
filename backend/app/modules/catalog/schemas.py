@@ -135,6 +135,7 @@ class ProductVariantResponse(BaseModel):
     price: Decimal
     compare_at_price: Optional[Decimal] = None
     is_active: bool
+    is_in_stock: bool = False
     created_at: datetime
     updated_at: datetime
 

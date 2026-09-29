@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.modules.inventory.models import InventoryItem
 
 from sqlalchemy import (
     Boolean,
@@ -329,6 +332,20 @@ class ProductVariant(Base):
         Product,
         back_populates="variants",
     )
+    inventory: Mapped[Optional["InventoryItem"]] = relationship(
+        "InventoryItem",
+        back_populates="variant",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def is_in_stock(self) -> bool:
+        """Computed stock availability flag based on linked InventoryItem."""
+        if self.inventory is not None:
+            return self.inventory.is_in_stock
+        return False
 
     def __repr__(self) -> str:
         return f"<ProductVariant id={self.id} sku={self.sku} price={self.price}>"

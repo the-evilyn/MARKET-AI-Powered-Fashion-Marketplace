@@ -15,6 +15,7 @@ from app.modules.catalog.models import (
     ProductMedia,
     ProductVariant,
 )
+from app.modules.inventory.models import InventoryItem
 from app.modules.catalog.schemas import (
     BrandCreate,
     BrandUpdate,
@@ -485,6 +486,16 @@ class VariantService:
             updated_at=datetime.now(timezone.utc),
         )
         db.add(variant)
+        inventory = InventoryItem(
+            id=uuid.uuid4(),
+            variant_id=variant.id,
+            quantity_on_hand=0,
+            quantity_reserved=0,
+            low_stock_threshold=5,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(inventory)
         await db.commit()
         await db.refresh(variant)
         return variant

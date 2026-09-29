@@ -17,6 +17,7 @@ from app.modules.catalog.models import (  # noqa: F401
     ProductVariant,
     ProductMedia,
 )
+from app.modules.inventory.models import InventoryItem  # noqa: F401
 
 
 config = context.config
