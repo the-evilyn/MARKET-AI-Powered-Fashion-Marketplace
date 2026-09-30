@@ -101,8 +101,8 @@ class CheckoutService:
             line_total = current_unit_price * Decimal(str(cart_item.quantity))
             order_subtotal += line_total
 
-            # Decrement inventory quantity on hand
-            inventory.quantity_on_hand -= cart_item.quantity
+            # Reserve inventory: quantity_reserved increases, quantity_on_hand remains unchanged
+            inventory.quantity_reserved += cart_item.quantity
             inventory.updated_at = datetime.now(timezone.utc)
 
             processed_items.append({

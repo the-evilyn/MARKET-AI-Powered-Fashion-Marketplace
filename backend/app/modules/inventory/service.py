@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import uuid
 from typing import List, Optional
 
@@ -204,6 +205,88 @@ class InventoryService:
         await db.commit()
         await db.refresh(item)
         return item
+
+    @staticmethod
+    async def finalize_stock(
+        db: AsyncSession,
+        variant_id: uuid.UUID,
+        quantity: int,
+        commit: bool = True,
+    ) -> InventoryItem:
+        """
+        Finalize reservation upon successful payment:
+        quantity_reserved -= quantity
+        quantity_on_hand -= quantity
+        """
+        if quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Finalize quantity must be strictly positive.",
+            )
+
+        item = await InventoryService.get_by_variant_id(db, variant_id, for_update=True)
+        if not item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Inventory record for variant '{variant_id}' not found.",
+            )
+
+        item.quantity_reserved = max(0, item.quantity_reserved - quantity)
+        item.quantity_on_hand = max(0, item.quantity_on_hand - quantity)
+        item.updated_at = datetime.now(timezone.utc)
+        if commit:
+            await db.commit()
+            await db.refresh(item)
+        return item
+
+    @staticmethod
+    async def finalize_order_inventory(
+        db: AsyncSession,
+        order_id: uuid.UUID,
+    ) -> None:
+        """
+        Finalize inventory reservations for an order upon successful payment.
+        Acquires row-level locks on inventory items in deterministic order.
+        quantity_reserved -= quantity
+        quantity_on_hand -= quantity
+        """
+        from app.modules.orders.models import OrderItem
+
+        stmt = select(OrderItem).where(OrderItem.order_id == order_id, OrderItem.variant_id.isnot(None))
+        res = await db.execute(stmt)
+        items = list(res.scalars().all())
+        sorted_items = sorted(items, key=lambda x: str(x.variant_id))
+
+        for item in sorted_items:
+            inv = await InventoryService.get_by_variant_id(db, item.variant_id, for_update=True)
+            if inv:
+                inv.quantity_reserved = max(0, inv.quantity_reserved - item.quantity)
+                inv.quantity_on_hand = max(0, inv.quantity_on_hand - item.quantity)
+                inv.updated_at = datetime.now(timezone.utc)
+
+    @staticmethod
+    async def release_order_inventory(
+        db: AsyncSession,
+        order_id: uuid.UUID,
+    ) -> None:
+        """
+        Release inventory reservations for a cancelled/failed order.
+        Acquires row-level locks on inventory items in deterministic order.
+        quantity_reserved -= quantity
+        quantity_on_hand remains unchanged.
+        """
+        from app.modules.orders.models import OrderItem
+
+        stmt = select(OrderItem).where(OrderItem.order_id == order_id, OrderItem.variant_id.isnot(None))
+        res = await db.execute(stmt)
+        items = list(res.scalars().all())
+        sorted_items = sorted(items, key=lambda x: str(x.variant_id))
+
+        for item in sorted_items:
+            inv = await InventoryService.get_by_variant_id(db, item.variant_id, for_update=True)
+            if inv:
+                inv.quantity_reserved = max(0, inv.quantity_reserved - item.quantity)
+                inv.updated_at = datetime.now(timezone.utc)
 
     @staticmethod
     async def list_seller_inventory(

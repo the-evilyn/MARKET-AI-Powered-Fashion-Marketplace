@@ -4,18 +4,18 @@ An AI-driven fashion marketplace platform engineered with a clean modular-monoli
 
 ---
 
-## Current Status: Phase 4 — Cart & Checkout Foundation
+## Current Status: Phase 5 — Real PayPal Sandbox Payment + Order Lifecycle + Customer Checkout UI
 
 > [!IMPORTANT]
-> **Phase 4 Scope**: Implements customer shopping cart persistence (`Cart`, `CartItem`), transactional checkout with row-level inventory locking, price snapshotting, and historical order record preservation (`Order`, `OrderItem`).
-> - **Ownership & RBAC**: Customer carts and checkout are restricted strictly to authenticated `CUSTOMER` accounts. Sellers and Admins cannot manipulate customer carts through customer APIs.
-> - **Scope Boundaries**: Payments and payment gateway integration, seller/admin dashboards, search engines, and AI features remain strictly deferred to subsequent phases.
+> **Phase 5 Scope**: Implements real PayPal Sandbox checkout integration, authoritative server-side order total calculation, atomic stock reservation/finalization/release lifecycle with row-level locks (`SELECT ... FOR UPDATE`), idempotent webhook processing, customer order history, and Next.js 14 marketplace customer checkout UI.
+> - **Inventory Lifecycle Fix**: Stock is reserved on checkout (`quantity_reserved += qty`), finalized upon confirmed payment capture (`quantity_on_hand -= qty, quantity_reserved -= qty`), and safely released on cancellation/failure (`quantity_reserved -= qty`).
+> - **Security**: DB order is source of truth for payment amounts. No card credentials stored. Sandbox credentials exist only in environment variables.
 
 ---
 
 ## Architecture Overview
 
-The system follows a **clean modular-monolith** pattern designed to scale without early microservices overhead while remaining ready for future AI capabilities:
+The system follows a **clean modular-monolith** pattern designed to scale without early microservices overhead while remaining extensible for multiple payment providers (e.g. PayPal, CMI):
 
 ```
 AI Fashion Marketplace
@@ -30,12 +30,16 @@ AI Fashion Marketplace
 │   │       ├── catalog/      # Brands, Categories, Products, Variants, Media
 │   │       ├── inventory/    # Stock on hand, reservations, availability, row locking
 │   │       ├── cart/         # Shopping cart, line items, subtotal calculation
-│   │       └── orders/       # Order snapshot preservation, checkout transaction
-│   ├── alembic/              # Database schema migrations (0001 - 0005)
-│   ├── tests/                # Automated pytest suite (92 passing tests)
+│   │       ├── orders/       # Order snapshot preservation, checkout transaction
+│   │       └── payments/     # Payment entities, PayPal client provider, webhooks, lifecycle
+│   ├── alembic/              # Database schema migrations (0001 - 0006)
+│   ├── tests/                # Automated pytest suite (121 passing tests)
 │   └── Dockerfile            # Container definition
 ├── frontend/                 # Next.js App Router Application
-│   ├── src/app/              # Pages, layout, and Tailwind CSS UI
+│   ├── src/app/              # Pages: Catalog (/), Checkout (/checkout), Orders (/orders, /orders/[id])
+│   ├── src/components/       # UI: Navbar with customer login and reactive cart indicator
+│   ├── src/context/          # Auth & Cart Context with 1-click customer login
+│   ├── src/lib/              # Typed API client and data contracts
 │   └── Dockerfile            # Production multi-stage container
 ├── infrastructure/           # Database scripts & object storage initialization
 │   ├── docker/init-db.sql    # PostgreSQL extensions (uuid-ossp, pgvector)
@@ -144,13 +148,22 @@ AI Fashion Marketplace
 | `DELETE` | `/api/v1/cart/items/{id}` | CUSTOMER | Remove item from active cart |
 | `DELETE` | `/api/v1/cart` | CUSTOMER | Clear all items from active cart |
 
-### Checkout & Orders Endpoints (Phase 4)
+### Checkout & Orders Endpoints (Phase 4 & 5)
 
 | Method | Path | Auth Required | Description |
 | :--- | :--- | :---: | :--- |
-| `POST` | `/api/v1/checkout` | CUSTOMER | Atomic checkout with row locking; creates order in PENDING_PAYMENT |
-| `GET` | `/api/v1/orders` | CUSTOMER | List authenticated customer order history |
-| `GET` | `/api/v1/orders/{id}` | CUSTOMER | Get customer order details with immutable historical snapshots |
+| `POST` | `/api/v1/checkout` | CUSTOMER | Atomic checkout with row locking; reserves stock and creates order in PENDING_PAYMENT |
+| `GET` | `/api/v1/orders` | CUSTOMER | List authenticated customer order history (includes payment status & provider) |
+| `GET` | `/api/v1/orders/{id}` | CUSTOMER | Get customer order details with line item snapshots and payment metadata |
+
+### Payments & Webhook Endpoints (Phase 5 — PayPal Sandbox)
+
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/payments/paypal/create-order` | CUSTOMER | Create server-side PayPal order for an internal PENDING_PAYMENT order |
+| `POST` | `/api/v1/payments/paypal/capture` | CUSTOMER | Capture payment server-side; finalizes inventory reservation and confirms order |
+| `POST` | `/api/v1/payments/paypal/cancel` | CUSTOMER | Cancel payment; releases inventory reservation and marks order CANCELLED |
+| `POST` | `/api/v1/payments/paypal/webhook` | Public / Webhook | Idempotently processes PayPal events (captures, denials, reversals) |
 
 ### Authentication & System Endpoints (Phase 1 & 0)
 
@@ -163,6 +176,60 @@ AI Fashion Marketplace
 | `GET` | `/api/v1/health` | No | Service health check |
 | `GET` | `/api/v1/health/ready` | No | Backing dependencies readiness probe |
 | `GET` | `/api/v1/health/live` | No | Container liveness probe |
+
+---
+
+## Phase 5 Payment Architecture & Inventory Lifecycle
+
+### Corrected Inventory Lifecycle Semantics
+
+In Phase 5, physical stock (`quantity_on_hand`) is never prematurely removed before successful payment. Stock transitions strictly follow:
+
+```
+CHECKOUT
+   │
+   ▼
+Reserve Stock (quantity_reserved += qty, quantity_on_hand unchanged)
+Order = PENDING_PAYMENT
+   │
+   ├──▶ PAYPAL PAYMENT SUCCESS (Capture)
+   │       │
+   │       ▼
+   │    Finalize Inventory (quantity_on_hand -= qty, quantity_reserved -= qty)
+   │    Order = CONFIRMED
+   │    Payment = COMPLETED
+   │
+   └──▶ PAYPAL PAYMENT FAILURE / CANCEL / REVERSAL
+           │
+           ▼
+        Release Inventory (quantity_reserved -= qty, quantity_on_hand unchanged)
+        Order = CANCELLED
+        Payment = FAILED or CANCELLED
+```
+
+All mutations use PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) with deterministic ordering on `variant_id` to prevent deadlocks and guarantee that two concurrent customers can never oversell available stock (`quantity_available = quantity_on_hand - quantity_reserved`).
+
+### Price Integrity & Security
+* **Authoritative Order Amount**: The backend calculates Order subtotal and total exclusively from database `ProductVariant` prices. Browser amounts are strictly ignored.
+* **Price Verification on Capture**: When PayPal completes capture, the backend re-verifies that captured amount and currency equal `order.total` and `order.currency`. Any discrepancy triggers immediate rollback, order cancellation, and inventory release.
+* **Credentials & Secrets**: Card credentials and CVVs are never processed or stored. PayPal client credentials exist solely in environment variables and are never committed to version control.
+
+### PayPal Sandbox Setup & Environment Variables
+
+Add the following to your `.env` file (copied from `.env.example`):
+
+```bash
+# Backend (Sandbox only - never commit real merchant secrets)
+PAYPAL_CLIENT_ID=your_paypal_sandbox_client_id
+PAYPAL_CLIENT_SECRET=your_paypal_sandbox_client_secret
+PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com
+PAYPAL_WEBHOOK_ID=your_paypal_webhook_id_optional
+
+# Frontend
+NEXT_PUBLIC_PAYPAL_CLIENT_ID=your_paypal_sandbox_client_id
+```
+
+If PayPal credentials are not provided, the application continues to build and run cleanly, displaying a clear development notification on the checkout page.
 
 
 ---

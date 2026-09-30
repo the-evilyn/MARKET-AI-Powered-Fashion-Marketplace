@@ -1,6 +1,6 @@
 import json
 from functools import lru_cache
-from typing import List, Union
+from typing import List, Optional, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET: str = "fashion-media"
     MINIO_USE_SSL: bool = False
+
+    # PayPal Sandbox Configuration
+    PAYPAL_CLIENT_ID: Optional[str] = None
+    PAYPAL_CLIENT_SECRET: Optional[str] = None
+    PAYPAL_BASE_URL: str = "https://api-m.sandbox.paypal.com"
+    PAYPAL_WEBHOOK_ID: Optional[str] = None
 
     # CORS Configuration
     CORS_ORIGINS: List[str] = [

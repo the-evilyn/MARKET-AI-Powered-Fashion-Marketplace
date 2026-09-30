@@ -110,7 +110,7 @@ async def test_18_order_item_historical_snapshots_stored(
 async def test_19_inventory_decreases_correctly(
     async_client: AsyncClient, create_user_helper, auth_headers_helper
 ):
-    """Test 19: Physical inventory decreases by exactly the purchased quantity upon checkout."""
+    """Test 19: Stock reservation increases by checkout quantity while quantity_on_hand is preserved."""
     seller = await create_user_helper(email="seller19@example.com", role=UserRole.SELLER)
     customer = await create_user_helper(email="cust19@example.com", role=UserRole.CUSTOMER)
     s_headers = auth_headers_helper(seller)
@@ -123,9 +123,10 @@ async def test_19_inventory_decreases_correctly(
     res = await async_client.post("/api/v1/checkout", headers=c_headers)
     assert res.status_code == 201
 
-    # Verify inventory is now 10 - 4 = 6
+    # Verify inventory reserves 4 units; on_hand remains 10; available is 6
     inv_res = await async_client.get(f"/api/v1/inventory/{variant_id}", headers=s_headers)
-    assert inv_res.json()["quantity_on_hand"] == 6
+    assert inv_res.json()["quantity_on_hand"] == 10
+    assert inv_res.json()["quantity_reserved"] == 4
     assert inv_res.json()["quantity_available"] == 6
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 import uuid
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -19,6 +19,9 @@ from app.core.database import Base
 from app.modules.catalog.models import ProductVariant
 from app.modules.orders.enums import OrderStatus
 from app.modules.users.models import User
+
+if TYPE_CHECKING:
+    from app.modules.payments.models import Payment
 
 
 class Order(Base):
@@ -94,6 +97,12 @@ class Order(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
         order_by="OrderItem.created_at.asc()",
+    )
+    payment: Mapped[Optional["Payment"]] = relationship(
+        "Payment",
+        back_populates="order",
+        uselist=False,
+        lazy="selectin",
     )
 
     def __repr__(self) -> str:
