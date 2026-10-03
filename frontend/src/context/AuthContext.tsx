@@ -10,6 +10,7 @@ interface AuthContextType {
   cartCount: number;
   login: (email: string, pass: string) => Promise<void>;
   quickCustomerLogin: () => Promise<void>;
+  quickSellerLogin: () => Promise<void>;
   logout: () => void;
   refreshCartCount: () => Promise<void>;
 }
@@ -91,6 +92,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const quickSellerLogin = async () => {
+    const defaultEmail = "seller@example.com";
+    const defaultPass = "Seller123!";
+    try {
+      await login(defaultEmail, defaultPass);
+    } catch {
+      try {
+        await api.register({
+          email: defaultEmail,
+          password: defaultPass,
+          first_name: "Demo",
+          last_name: "Seller",
+          role: "SELLER",
+        });
+        await login(defaultEmail, defaultPass);
+      } catch (err) {
+        console.error("Quick seller login registration failed:", err);
+      }
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     setUser(null);
@@ -107,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         cartCount,
         login,
         quickCustomerLogin,
+        quickSellerLogin,
         logout,
         refreshCartCount,
       }}

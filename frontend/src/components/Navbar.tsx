@@ -7,7 +7,7 @@ import { ShoppingBag, Package, User as UserIcon, LogOut, Sparkles, CheckCircle2 
 import { useAuth } from "@/context/AuthContext";
 
 export default function Navbar() {
-  const { user, cartCount, quickCustomerLogin, logout, login } = useAuth();
+  const { user, cartCount, quickCustomerLogin, quickSellerLogin, logout, login } = useAuth();
   const pathname = usePathname();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [email, setEmail] = useState("");
@@ -72,6 +72,19 @@ export default function Navbar() {
                 >
                   My Orders
                 </Link>
+                {user && (user.role === "SELLER" || user.role === "ADMIN") && (
+                  <Link
+                    href="/seller/dashboard"
+                    className={`ml-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-1.5 ${
+                      pathname.startsWith("/seller")
+                        ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30"
+                        : "text-indigo-400 hover:text-white hover:bg-indigo-600/20 border border-indigo-500/30"
+                    }`}
+                  >
+                    <Package className="w-4 h-4" />
+                    <span>Seller Dashboard</span>
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -119,7 +132,15 @@ export default function Navbar() {
                     title="Instant Customer Login for Testing"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Quick Customer</span>
+                    <span className="hidden sm:inline">Quick</span> Customer
+                  </button>
+                  <button
+                    onClick={quickSellerLogin}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors"
+                    title="Instant Seller Login for Testing"
+                  >
+                    <Package className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Quick</span> Seller
                   </button>
                   <button
                     onClick={() => setShowLoginModal(true)}

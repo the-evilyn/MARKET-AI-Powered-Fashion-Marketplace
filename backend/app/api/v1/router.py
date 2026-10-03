@@ -9,6 +9,7 @@ from app.modules.inventory.routes import router as inventory_router
 from app.modules.cart.routes import router as cart_router
 from app.modules.orders.routes import router as orders_router
 from app.modules.payments.routes import router as payments_router
+from app.modules.seller.routes import router as seller_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -23,3 +24,4 @@ api_v1_router.include_router(inventory_router)
 api_v1_router.include_router(cart_router)
 api_v1_router.include_router(orders_router)
 api_v1_router.include_router(payments_router)
+api_v1_router.include_router(seller_router)

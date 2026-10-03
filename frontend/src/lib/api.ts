@@ -30,11 +30,13 @@ export interface ProductVariant {
 
 export interface Product {
   id: string;
+  seller_id?: string;
   name: string;
   slug: string;
   description?: string;
   base_price: string;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
+  is_active?: boolean;
   brand?: { id: string; name: string };
   category?: { id: string; name: string };
   variants: ProductVariant[];
@@ -118,6 +120,66 @@ export interface PayPalCancelResponse {
   order_number: string;
   status: string;
   order_status: string;
+}
+
+export interface SellerDashboardKPIs {
+  total_products: number;
+  active_products: number;
+  total_variants: number;
+  low_stock_variants: number;
+  out_of_stock_variants: number;
+  total_orders: number;
+  pending_orders: number;
+  confirmed_orders: number;
+  cancelled_orders: number;
+  total_sales: string | number;
+  total_items_sold: number;
+}
+
+export interface SellerInventoryItem {
+  id: string;
+  variant_id: string;
+  product_id: string;
+  product_name: string;
+  sku: string;
+  color?: string;
+  size?: string;
+  price: string;
+  compare_at_price?: string;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  quantity_available: number;
+  low_stock_threshold: number;
+  is_in_stock: boolean;
+  is_low_stock: boolean;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface SellerOrderItem {
+  id: string;
+  order_id: string;
+  variant_id?: string;
+  product_name: string;
+  sku: string;
+  color?: string;
+  size?: string;
+  unit_price: string;
+  quantity: number;
+  line_total: string;
+  created_at: string;
+}
+
+export interface SellerOrder {
+  id: string;
+  order_number: string;
+  created_at: string;
+  status: "PENDING_PAYMENT" | "CONFIRMED" | "CANCELLED";
+  currency: string;
+  seller_subtotal: string;
+  seller_total_quantity: number;
+  payment_status?: string | null;
+  items: SellerOrderItem[];
 }
 
 function getStoredToken(): string | null {
@@ -253,5 +315,150 @@ export const api = {
 
   async getOrder(orderId: string): Promise<Order> {
     return request<Order>(`/orders/${orderId}`);
+  },
+
+  // Seller Operations
+  async getSellerDashboard(): Promise<SellerDashboardKPIs> {
+    return request<SellerDashboardKPIs>("/seller/dashboard");
+  },
+
+  async getSellerProducts(params?: { status?: string; is_active?: boolean }): Promise<Product[]> {
+    const q = new URLSearchParams();
+    if (params?.status) q.append("status", params.status);
+    if (params?.is_active !== undefined) q.append("is_active", String(params.is_active));
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return request<Product[]>(`/seller/products${qs}`);
+  },
+
+  async getSellerProduct(id: string): Promise<Product> {
+    return request<Product>(`/seller/products/${id}`);
+  },
+
+  async createSellerProduct(data: {
+    name: string;
+    base_price: string;
+    slug?: string;
+    description?: string;
+    status?: string;
+    brand_id?: string;
+    category_id?: string;
+  }): Promise<Product> {
+    return request<Product>("/seller/products", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateSellerProduct(
+    id: string,
+    data: {
+      name?: string;
+      base_price?: string;
+      description?: string;
+      status?: string;
+      is_active?: boolean;
+    }
+  ): Promise<Product> {
+    return request<Product>(`/seller/products/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteSellerProduct(id: string): Promise<void> {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/seller/products/${id}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!res.ok && res.status !== 204) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || `Delete failed with status ${res.status}`);
+    }
+  },
+
+  async createSellerVariant(
+    productId: string,
+    data: {
+      sku: string;
+      price: string;
+      compare_at_price?: string;
+      color?: string;
+      size?: string;
+      is_active?: boolean;
+    }
+  ): Promise<ProductVariant> {
+    return request<ProductVariant>(`/seller/products/${productId}/variants`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateSellerVariant(
+    productId: string,
+    variantId: string,
+    data: {
+      sku?: string;
+      price?: string;
+      compare_at_price?: string;
+      color?: string;
+      size?: string;
+      is_active?: boolean;
+    }
+  ): Promise<ProductVariant> {
+    return request<ProductVariant>(`/seller/products/${productId}/variants/${variantId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteSellerVariant(productId: string, variantId: string): Promise<void> {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/seller/products/${productId}/variants/${variantId}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!res.ok && res.status !== 204) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || `Delete failed with status ${res.status}`);
+    }
+  },
+
+  async getSellerInventory(lowStockOnly: boolean = false): Promise<SellerInventoryItem[]> {
+    const qs = lowStockOnly ? "?low_stock_only=true" : "";
+    return request<SellerInventoryItem[]>(`/seller/inventory${qs}`);
+  },
+
+  async updateSellerInventory(
+    variantId: string,
+    data: { quantity_on_hand?: number; low_stock_threshold?: number }
+  ): Promise<SellerInventoryItem> {
+    return request<SellerInventoryItem>(`/seller/inventory/${variantId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async adjustSellerInventory(
+    variantId: string,
+    data: { adjustment: number; reason?: string }
+  ): Promise<SellerInventoryItem> {
+    return request<SellerInventoryItem>(`/seller/inventory/${variantId}/adjust`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getSellerOrders(status?: string): Promise<SellerOrder[]> {
+    const qs = status ? `?status=${status}` : "";
+    return request<SellerOrder[]>(`/seller/orders${qs}`);
+  },
+
+  async getSellerOrder(orderId: string): Promise<SellerOrder> {
+    return request<SellerOrder>(`/seller/orders/${orderId}`);
   },
 };
