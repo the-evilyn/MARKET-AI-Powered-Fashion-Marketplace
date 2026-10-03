@@ -19,6 +19,7 @@ export interface ProductVariant {
   size?: string;
   color?: string;
   is_active: boolean;
+  is_in_stock?: boolean;
   inventory?: {
     quantity_on_hand: number;
     quantity_reserved: number;
@@ -35,12 +36,53 @@ export interface Product {
   slug: string;
   description?: string;
   base_price: string;
+  currency?: string;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   is_active?: boolean;
-  brand?: { id: string; name: string };
-  category?: { id: string; name: string };
+  brand?: { id: string; name: string; slug?: string };
+  category?: { id: string; name: string; slug?: string };
   variants: ProductVariant[];
   media?: { id: string; url: string; alt_text?: string; is_primary: boolean }[];
+  is_in_stock?: boolean;
+}
+
+export interface SearchFilterOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface SearchFiltersResponse {
+  categories: SearchFilterOption[];
+  brands: SearchFilterOption[];
+  sizes: string[];
+  colors: string[];
+  min_price: string | number;
+  max_price: string | number;
+}
+
+export interface SearchProductsResponse {
+  items: Product[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export interface SearchQueryParams {
+  q?: string;
+  category_id?: string;
+  brand_id?: string;
+  min_price?: number | string;
+  max_price?: number | string;
+  size?: string;
+  color?: string;
+  in_stock?: boolean;
+  sort?: "relevance" | "price_asc" | "price_desc" | "newest" | "oldest" | "name_asc" | "name_desc";
+  page?: number;
+  page_size?: number;
 }
 
 export interface CartItem {
@@ -253,6 +295,29 @@ export const api = {
 
   async getProduct(id: string): Promise<Product> {
     return request<Product>(`/products/${id}`);
+  },
+
+  // Discovery & Search
+  async searchProducts(params: SearchQueryParams = {}): Promise<SearchProductsResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.q?.trim()) searchParams.set("q", params.q.trim());
+    if (params.category_id) searchParams.set("category_id", params.category_id);
+    if (params.brand_id) searchParams.set("brand_id", params.brand_id);
+    if (params.min_price !== undefined && params.min_price !== "") searchParams.set("min_price", String(params.min_price));
+    if (params.max_price !== undefined && params.max_price !== "") searchParams.set("max_price", String(params.max_price));
+    if (params.size?.trim()) searchParams.set("size", params.size.trim());
+    if (params.color?.trim()) searchParams.set("color", params.color.trim());
+    if (params.in_stock !== undefined && params.in_stock !== null) searchParams.set("in_stock", String(params.in_stock));
+    if (params.sort) searchParams.set("sort", params.sort);
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+
+    const qs = searchParams.toString();
+    return request<SearchProductsResponse>(`/search/products${qs ? `?${qs}` : ""}`);
+  },
+
+  async getSearchFilters(): Promise<SearchFiltersResponse> {
+    return request<SearchFiltersResponse>("/search/filters");
   },
 
   // Cart
