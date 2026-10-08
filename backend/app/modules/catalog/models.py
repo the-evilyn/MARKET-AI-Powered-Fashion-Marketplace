@@ -399,6 +399,18 @@ class ProductMedia(Base):
         default=False,
         nullable=False,
     )
+    file_size: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    mime_type: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    original_filename: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

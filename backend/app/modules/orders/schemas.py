@@ -11,6 +11,8 @@ class OrderItemResponse(BaseModel):
     """Historical line item snapshot captured on the order."""
     id: uuid.UUID
     order_id: uuid.UUID
+    sub_order_id: Optional[uuid.UUID] = None
+    seller_id: Optional[uuid.UUID] = None
     variant_id: Optional[uuid.UUID] = None
     product_name: str
     sku: str
@@ -20,6 +22,35 @@ class OrderItemResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SubOrderResponse(BaseModel):
+    """Vendor-scoped fulfillment sub-order representation."""
+    id: uuid.UUID
+    order_id: uuid.UUID
+    seller_id: uuid.UUID
+    sub_order_number: str
+    status: OrderStatus
+    subtotal: Decimal
+    shipping_amount: Decimal
+    total: Decimal
+    currency: str
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    items: List[OrderItemResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SellerFulfillmentUpdate(BaseModel):
+    """Payload for updating seller sub-order fulfillment and tracking."""
+    status: Optional[OrderStatus] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
 
 
 class OrderResponse(BaseModel):
@@ -34,6 +65,7 @@ class OrderResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemResponse] = []
+    sub_orders: List[SubOrderResponse] = []
     payment_status: Optional[str] = None
     payment_provider: Optional[str] = None
 
@@ -57,6 +89,7 @@ class OrderResponse(BaseModel):
                 "created_at": data.created_at,
                 "updated_at": data.updated_at,
                 "items": data.items or [],
+                "sub_orders": getattr(data, "sub_orders", []) or [],
                 "payment_status": p_status,
                 "payment_provider": p_provider,
             }

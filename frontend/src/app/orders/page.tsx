@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Package, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ShoppingBag } from "lucide-react";
+import { Package, ArrowRight, Clock, CheckCircle2, XCircle, AlertCircle, ShoppingBag, Truck } from "lucide-react";
 import { api, Order } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
@@ -40,6 +40,27 @@ export default function OrdersHistoryPage() {
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <CheckCircle2 className="w-3.5 h-3.5" />
             CONFIRMED
+          </span>
+        );
+      case "PROCESSING":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            <Clock className="w-3.5 h-3.5" />
+            PROCESSING
+          </span>
+        );
+      case "SHIPPED":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <Truck className="w-3.5 h-3.5" />
+            SHIPPED
+          </span>
+        );
+      case "DELIVERED":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            DELIVERED
           </span>
         );
       case "PENDING_PAYMENT":
@@ -150,8 +171,18 @@ export default function OrdersHistoryPage() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400">
-                  Placed on {new Date(order.created_at).toLocaleDateString()} &bull; {order.items.length} {order.items.length === 1 ? "item" : "items"}
+                <p className="text-xs text-slate-400 flex flex-wrap items-center gap-2">
+                  <span>Placed on {new Date(order.created_at).toLocaleDateString()}</span>
+                  <span>&bull;</span>
+                  <span>{order.items.length} {order.items.length === 1 ? "item" : "items"}</span>
+                  {order.sub_orders && order.sub_orders.length > 0 && (
+                    <>
+                      <span>&bull;</span>
+                      <span className="text-indigo-400 font-medium">
+                        {order.sub_orders.length} {order.sub_orders.length === 1 ? "shipment" : "shipments"}
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
 

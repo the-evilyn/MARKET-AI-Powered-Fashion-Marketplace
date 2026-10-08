@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.catalog.enums import ProductStatus
+from app.modules.catalog.enums import ProductStatus, MediaType
 from app.modules.catalog.models import (
     Brand,
     Category,
@@ -591,6 +591,50 @@ class MediaService:
             alt_text=payload.alt_text.strip() if payload.alt_text else None,
             sort_order=payload.sort_order,
             is_primary=payload.is_primary,
+            file_size=payload.file_size,
+            mime_type=payload.mime_type,
+            original_filename=payload.original_filename,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(media)
+        await db.commit()
+        await db.refresh(media)
+        return media
+
+    @staticmethod
+    async def upload_and_create(
+        db: AsyncSession,
+        product_id: uuid.UUID,
+        file_content: bytes,
+        filename: str,
+        content_type: str,
+        alt_text: Optional[str] = None,
+        sort_order: int = 0,
+        is_primary: bool = False,
+    ) -> ProductMedia:
+        from app.core.storage import StorageService, validate_image_file
+
+        ext = validate_image_file(file_content, filename, content_type)
+        object_key = f"products/{product_id}/{uuid.uuid4().hex}{ext}"
+
+        url = StorageService.upload_file(
+            data=file_content,
+            object_key=object_key,
+            content_type=content_type,
+        )
+
+        media = ProductMedia(
+            id=uuid.uuid4(),
+            product_id=product_id,
+            media_type=MediaType.IMAGE,
+            url=url,
+            object_key=object_key,
+            alt_text=alt_text.strip() if alt_text else None,
+            sort_order=sort_order,
+            is_primary=is_primary,
+            file_size=len(file_content),
+            mime_type=content_type,
+            original_filename=filename,
             created_at=datetime.now(timezone.utc),
         )
         db.add(media)
@@ -616,6 +660,12 @@ class MediaService:
             media.sort_order = payload.sort_order
         if payload.is_primary is not None:
             media.is_primary = payload.is_primary
+        if payload.file_size is not None:
+            media.file_size = payload.file_size
+        if payload.mime_type is not None:
+            media.mime_type = payload.mime_type
+        if payload.original_filename is not None:
+            media.original_filename = payload.original_filename
 
         await db.commit()
         await db.refresh(media)
@@ -623,5 +673,8 @@ class MediaService:
 
     @staticmethod
     async def delete(db: AsyncSession, media: ProductMedia) -> None:
+        if media.object_key:
+            from app.core.storage import StorageService
+            StorageService.delete_file(media.object_key)
         await db.delete(media)
         await db.commit()

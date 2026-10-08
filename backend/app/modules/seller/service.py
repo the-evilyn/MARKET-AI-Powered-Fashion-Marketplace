@@ -20,7 +20,7 @@ from app.modules.catalog.service import ProductService, VariantService
 from app.modules.inventory.models import InventoryItem
 from app.modules.inventory.service import InventoryService
 from app.modules.orders.enums import OrderStatus
-from app.modules.orders.models import Order, OrderItem
+from app.modules.orders.models import Order, OrderItem, SubOrder
 from app.modules.seller.schemas import (
     SellerDashboardResponse,
     SellerInventoryItemResponse,
@@ -565,11 +565,11 @@ class SellerService:
         stmt = (
             select(Order)
             .join(OrderItem, Order.id == OrderItem.order_id)
-            .join(ProductVariant, OrderItem.variant_id == ProductVariant.id)
-            .join(Product, ProductVariant.product_id == Product.id)
+            .outerjoin(ProductVariant, OrderItem.variant_id == ProductVariant.id)
+            .outerjoin(Product, ProductVariant.product_id == Product.id)
         )
         if seller_id is not None:
-            stmt = stmt.where(Product.seller_id == seller_id)
+            stmt = stmt.where((OrderItem.seller_id == seller_id) | (Product.seller_id == seller_id))
         if status_filter is not None:
             stmt = stmt.where(Order.status == status_filter)
 
@@ -577,6 +577,7 @@ class SellerService:
             stmt.distinct()
             .options(
                 selectinload(Order.items).selectinload(OrderItem.variant).selectinload(ProductVariant.product),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
                 selectinload(Order.payment),
             )
             .order_by(Order.created_at.desc())
@@ -588,20 +589,32 @@ class SellerService:
 
         seller_orders: List[SellerOrderResponse] = []
         for ord_entity in orders:
+            # Find sub_order matching this seller if exists
+            matched_so = None
+            if seller_id is not None and ord_entity.sub_orders:
+                matched_so = next((so for so in ord_entity.sub_orders if so.seller_id == seller_id), None)
+            elif ord_entity.sub_orders:
+                matched_so = ord_entity.sub_orders[0]
+
             seller_items: List[SellerOrderItemResponse] = []
             subtotal = Decimal("0.00")
             qty = 0
             for item in ord_entity.items:
                 is_seller_item = (
-                    item.variant is not None
-                    and item.variant.product is not None
-                    and (seller_id is None or item.variant.product.seller_id == seller_id)
+                    (item.seller_id is not None and (seller_id is None or item.seller_id == seller_id))
+                    or (
+                        item.variant is not None
+                        and item.variant.product is not None
+                        and (seller_id is None or item.variant.product.seller_id == seller_id)
+                    )
                 )
                 if is_seller_item:
                     seller_items.append(
                         SellerOrderItemResponse(
                             id=item.id,
                             order_id=item.order_id,
+                            sub_order_id=item.sub_order_id,
+                            seller_id=item.seller_id,
                             variant_id=item.variant_id,
                             product_name=item.product_name,
                             sku=item.sku,
@@ -622,16 +635,24 @@ class SellerService:
                     p = ord_entity.payment
                     payment_st = p.status.value if hasattr(p.status, "value") else str(p.status)
 
+                status_val = matched_so.status if matched_so else ord_entity.status
+
                 seller_orders.append(
                     SellerOrderResponse(
                         id=ord_entity.id,
                         order_number=ord_entity.order_number,
+                        sub_order_id=matched_so.id if matched_so else None,
+                        sub_order_number=matched_so.sub_order_number if matched_so else ord_entity.order_number,
                         created_at=ord_entity.created_at,
-                        status=ord_entity.status,
+                        status=status_val,
                         currency=ord_entity.currency,
-                        seller_subtotal=subtotal,
+                        seller_subtotal=matched_so.subtotal if matched_so else subtotal,
                         seller_total_quantity=qty,
                         payment_status=payment_st,
+                        carrier=matched_so.carrier if matched_so else None,
+                        tracking_number=matched_so.tracking_number if matched_so else None,
+                        shipped_at=matched_so.shipped_at if matched_so else None,
+                        delivered_at=matched_so.delivered_at if matched_so else None,
                         items=seller_items,
                     )
                 )
@@ -646,38 +667,71 @@ class SellerService:
     ) -> SellerOrderResponse:
         """
         Fetch order details filtered strictly to the seller's items.
+        Allows lookup by parent order_id OR sub_order_id.
         If order exists but contains zero items for this seller, returns 404 (IDOR protection).
         """
+        # 1. Try finding by parent order id
         stmt = (
             select(Order)
             .where(Order.id == order_id)
             .options(
                 selectinload(Order.items).selectinload(OrderItem.variant).selectinload(ProductVariant.product),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
                 selectinload(Order.payment),
             )
         )
         res = await db.execute(stmt)
         ord_entity = res.scalar_one_or_none()
+
+        # 2. If not found by parent Order ID, check if order_id is actually a SubOrder ID
+        if not ord_entity:
+            so_stmt = select(SubOrder).where(SubOrder.id == order_id)
+            so_res = await db.execute(so_stmt)
+            sub_order_match = so_res.scalar_one_or_none()
+            if sub_order_match:
+                stmt = (
+                    select(Order)
+                    .where(Order.id == sub_order_match.order_id)
+                    .options(
+                        selectinload(Order.items).selectinload(OrderItem.variant).selectinload(ProductVariant.product),
+                        selectinload(Order.sub_orders).selectinload(SubOrder.items),
+                        selectinload(Order.payment),
+                    )
+                )
+                res = await db.execute(stmt)
+                ord_entity = res.scalar_one_or_none()
+
         if not ord_entity:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Order with id '{order_id}' not found.",
             )
 
+        matched_so = None
+        if seller_id is not None and ord_entity.sub_orders:
+            matched_so = next((so for so in ord_entity.sub_orders if so.seller_id == seller_id), None)
+        elif ord_entity.sub_orders:
+            matched_so = ord_entity.sub_orders[0]
+
         seller_items: List[SellerOrderItemResponse] = []
         subtotal = Decimal("0.00")
         qty = 0
         for item in ord_entity.items:
             is_seller_item = (
-                item.variant is not None
-                and item.variant.product is not None
-                and (seller_id is None or item.variant.product.seller_id == seller_id)
+                (item.seller_id is not None and (seller_id is None or item.seller_id == seller_id))
+                or (
+                    item.variant is not None
+                    and item.variant.product is not None
+                    and (seller_id is None or item.variant.product.seller_id == seller_id)
+                )
             )
             if is_seller_item:
                 seller_items.append(
                     SellerOrderItemResponse(
                         id=item.id,
                         order_id=item.order_id,
+                        sub_order_id=item.sub_order_id,
+                        seller_id=item.seller_id,
                         variant_id=item.variant_id,
                         product_name=item.product_name,
                         sku=item.sku,
@@ -704,14 +758,127 @@ class SellerService:
             p = ord_entity.payment
             payment_st = p.status.value if hasattr(p.status, "value") else str(p.status)
 
+        status_val = matched_so.status if matched_so else ord_entity.status
+
         return SellerOrderResponse(
             id=ord_entity.id,
             order_number=ord_entity.order_number,
+            sub_order_id=matched_so.id if matched_so else None,
+            sub_order_number=matched_so.sub_order_number if matched_so else ord_entity.order_number,
             created_at=ord_entity.created_at,
-            status=ord_entity.status,
+            status=status_val,
             currency=ord_entity.currency,
-            seller_subtotal=subtotal,
+            seller_subtotal=matched_so.subtotal if matched_so else subtotal,
             seller_total_quantity=qty,
             payment_status=payment_st,
+            carrier=matched_so.carrier if matched_so else None,
+            tracking_number=matched_so.tracking_number if matched_so else None,
+            shipped_at=matched_so.shipped_at if matched_so else None,
+            delivered_at=matched_so.delivered_at if matched_so else None,
             items=seller_items,
         )
+
+    @staticmethod
+    async def update_fulfillment(
+        db: AsyncSession,
+        sub_order_id: uuid.UUID,
+        seller_id: Optional[uuid.UUID] = None,
+        new_status: Optional[OrderStatus] = None,
+        carrier: Optional[str] = None,
+        tracking_number: Optional[str] = None,
+    ) -> SellerOrderResponse:
+        """
+        Update fulfillment details (status, carrier, tracking number) for a vendor sub-order.
+        Enforces vendor ownership and controlled lifecycle status transitions:
+        CONFIRMED -> PROCESSING -> SHIPPED -> DELIVERED.
+        """
+        stmt = (
+            select(SubOrder)
+            .where(SubOrder.id == sub_order_id)
+            .options(
+                selectinload(SubOrder.items),
+                selectinload(SubOrder.order).selectinload(Order.sub_orders),
+                selectinload(SubOrder.order).selectinload(Order.payment),
+            )
+        )
+        res = await db.execute(stmt)
+        sub_order = res.scalar_one_or_none()
+
+        # If not found by sub_order_id directly, try finding if sub_order_id passed was order_id
+        if not sub_order:
+            order_stmt = (
+                select(SubOrder)
+                .where(SubOrder.order_id == sub_order_id)
+                .options(
+                    selectinload(SubOrder.items),
+                    selectinload(SubOrder.order).selectinload(Order.sub_orders),
+                    selectinload(SubOrder.order).selectinload(Order.payment),
+                )
+            )
+            if seller_id is not None:
+                order_stmt = order_stmt.where(SubOrder.seller_id == seller_id)
+            sub_order = (await db.execute(order_stmt)).scalar_one_or_none()
+
+        if not sub_order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"SubOrder with id '{sub_order_id}' not found.",
+            )
+
+        if seller_id is not None and sub_order.seller_id != seller_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to manage this sub-order.",
+            )
+
+        now = datetime.now(timezone.utc)
+
+        if carrier is not None:
+            sub_order.carrier = carrier.strip() if carrier.strip() else None
+        if tracking_number is not None:
+            sub_order.tracking_number = tracking_number.strip() if tracking_number.strip() else None
+
+        if new_status is not None and new_status != sub_order.status:
+            # Validate status transition
+            valid_transitions = {
+                OrderStatus.PENDING_PAYMENT: [OrderStatus.CANCELLED],
+                OrderStatus.CONFIRMED: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
+                OrderStatus.PROCESSING: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+                OrderStatus.SHIPPED: [OrderStatus.DELIVERED],
+                OrderStatus.DELIVERED: [],
+                OrderStatus.CANCELLED: [],
+            }
+            allowed = valid_transitions.get(sub_order.status, [])
+            if new_status not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid status transition from '{sub_order.status.value}' to '{new_status.value}'.",
+                )
+
+            sub_order.status = new_status
+            if new_status == OrderStatus.SHIPPED and not sub_order.shipped_at:
+                sub_order.shipped_at = now
+            elif new_status == OrderStatus.DELIVERED and not sub_order.delivered_at:
+                sub_order.delivered_at = now
+
+        sub_order.updated_at = now
+
+        # Update parent order global status if applicable
+        parent = sub_order.order
+        if parent and parent.sub_orders:
+            all_statuses = [so.status for so in parent.sub_orders if so.id != sub_order.id] + [sub_order.status]
+            if all(s == OrderStatus.DELIVERED for s in all_statuses):
+                parent.status = OrderStatus.DELIVERED
+                parent.updated_at = now
+            elif all(s in (OrderStatus.SHIPPED, OrderStatus.DELIVERED) for s in all_statuses):
+                parent.status = OrderStatus.SHIPPED
+                parent.updated_at = now
+            elif any(s == OrderStatus.PROCESSING for s in all_statuses) and parent.status == OrderStatus.CONFIRMED:
+                parent.status = OrderStatus.PROCESSING
+                parent.updated_at = now
+
+        await db.commit()
+        await db.refresh(sub_order)
+
+        # Return updated seller order response
+        return await SellerService.get_order(db, sub_order.order_id, seller_id)

@@ -990,6 +990,22 @@ function CatalogSearchContent() {
                       <div>
                         {/* Visual / Thumbnail Banner */}
                         <div className="w-full h-48 rounded-xl bg-gradient-to-tr from-slate-800 via-indigo-950/40 to-slate-800 border border-slate-800/80 flex flex-col justify-between p-4 relative overflow-hidden group-hover:border-indigo-500/30 transition-colors">
+                          {(() => {
+                            const hero = (product.media || []).find((m) => m.is_primary) || product.media?.[0];
+                            if (!hero?.url) return null;
+                            return (
+                              <img
+                                src={hero.url}
+                                alt={hero.alt_text || product.name}
+                                className="absolute inset-0 w-full h-full object-cover z-0 group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = "none";
+                                }}
+                              />
+                            );
+                          })()}
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent pointer-events-none z-5"></div>
+
                           <div className="flex items-center justify-between z-10">
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 text-slate-300 backdrop-blur border border-white/10">
                               {product.brand?.name || "Originals"}

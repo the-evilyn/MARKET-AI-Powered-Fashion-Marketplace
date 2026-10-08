@@ -23,6 +23,7 @@ from app.modules.inventory.schemas import (
 from app.modules.orders.enums import OrderStatus
 from app.modules.seller.schemas import (
     SellerDashboardResponse,
+    SellerFulfillmentRequest,
     SellerInventoryItemResponse,
     SellerOrderResponse,
 )
@@ -387,3 +388,30 @@ async def get_seller_order(
     """
     effective_seller_id = resolve_seller_scope(current_user)
     return await SellerService.get_order(db, order_id, effective_seller_id)
+
+
+@router.patch(
+    "/orders/{order_id}/fulfillment",
+    response_model=SellerOrderResponse,
+    summary="Update seller order fulfillment status, carrier, and tracking number",
+)
+async def update_seller_order_fulfillment(
+    order_id: uuid.UUID,
+    payload: SellerFulfillmentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SELLER, UserRole.ADMIN)),
+) -> SellerOrderResponse:
+    """
+    Update vendor fulfillment state (e.g. PROCESSING, SHIPPED, DELIVERED), carrier, and tracking number.
+    Strictly restricted to the seller's own sub-order.
+    """
+    effective_seller_id = resolve_seller_scope(current_user)
+    return await SellerService.update_fulfillment(
+        db=db,
+        sub_order_id=order_id,
+        seller_id=effective_seller_id,
+        new_status=payload.status,
+        carrier=payload.carrier,
+        tracking_number=payload.tracking_number,
+    )
+

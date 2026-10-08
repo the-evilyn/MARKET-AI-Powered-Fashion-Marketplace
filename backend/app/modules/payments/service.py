@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.inventory.service import InventoryService
 from app.modules.orders.enums import OrderStatus
-from app.modules.orders.models import Order
+from app.modules.orders.models import Order, SubOrder
 from app.modules.payments.enums import PaymentProvider, PaymentStatus
 from app.modules.payments.models import Payment, PaymentWebhookEvent
 from app.modules.payments.providers.paypal import PayPalClient
@@ -126,6 +126,20 @@ class PaymentService:
             provider=PaymentProvider.PAYPAL.value,
         )
 
+    @staticmethod
+    async def _sync_sub_orders_status(
+        db: AsyncSession,
+        order_id: uuid.UUID,
+        target_status: OrderStatus,
+        timestamp: datetime,
+    ) -> None:
+        """Keep vendor sub-orders in sync with parent order payment transitions."""
+        stmt = select(SubOrder).where(SubOrder.order_id == order_id)
+        res = await db.execute(stmt)
+        for so in res.scalars().all():
+            so.status = target_status
+            so.updated_at = timestamp
+
     async def capture_paypal_payment(
         self,
         db: AsyncSession,
@@ -226,6 +240,7 @@ class PaymentService:
 
             order.status = OrderStatus.CONFIRMED
             order.updated_at = now
+            await self._sync_sub_orders_status(db, order.id, OrderStatus.CONFIRMED, now)
 
             # Atomically finalize inventory (decrements reserved and on_hand)
             await InventoryService.finalize_order_inventory(db, order.id)
@@ -255,6 +270,7 @@ class PaymentService:
 
             order.status = OrderStatus.CANCELLED
             order.updated_at = now
+            await self._sync_sub_orders_status(db, order.id, OrderStatus.CANCELLED, now)
 
             # Release reserved inventory back to available
             await InventoryService.release_order_inventory(db, order.id)
@@ -330,6 +346,7 @@ class PaymentService:
 
         order.status = OrderStatus.CANCELLED
         order.updated_at = now
+        await self._sync_sub_orders_status(db, order.id, OrderStatus.CANCELLED, now)
 
         # Release inventory reservation
         await InventoryService.release_order_inventory(db, order.id)
@@ -440,6 +457,7 @@ class PaymentService:
                     payment.updated_at = now
                     order.status = OrderStatus.CONFIRMED
                     order.updated_at = now
+                    await self._sync_sub_orders_status(db, order.id, OrderStatus.CONFIRMED, now)
                     await InventoryService.finalize_order_inventory(db, order.id)
 
             elif event_type in ("PAYMENT.CAPTURE.DENIED", "CHECKOUT.PAYMENT-APPROVAL.REVERSED"):
@@ -452,6 +470,7 @@ class PaymentService:
                     payment.updated_at = now
                     order.status = OrderStatus.CANCELLED
                     order.updated_at = now
+                    await self._sync_sub_orders_status(db, order.id, OrderStatus.CANCELLED, now)
                     await InventoryService.release_order_inventory(db, order.id)
 
             elif event_type == "PAYMENT.CAPTURE.PENDING":

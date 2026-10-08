@@ -16,6 +16,8 @@ import {
   ChevronUp,
   X,
   ShieldAlert,
+  Image as ImageIcon,
+  Upload,
 } from "lucide-react";
 import SellerNav from "@/components/SellerNav";
 import { api, Product, ProductVariant } from "@/lib/api";
@@ -51,6 +53,60 @@ export default function SellerProductsPage() {
   const [varSize, setVarSize] = useState("");
   const [varSubmitting, setVarSubmitting] = useState(false);
   const [varError, setVarError] = useState<string | null>(null);
+
+  // Media Modal State
+  const [showMediaModal, setShowMediaModal] = useState(false);
+  const [mediaProduct, setMediaProduct] = useState<Product | null>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaAlt, setMediaAlt] = useState("");
+  const [mediaIsPrimary, setMediaIsPrimary] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  const openMediaModal = (p: Product) => {
+    setMediaProduct(p);
+    setMediaFile(null);
+    setMediaAlt("");
+    setMediaIsPrimary(false);
+    setMediaError(null);
+    setShowMediaModal(true);
+  };
+
+  const handleUploadMedia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mediaProduct || !mediaFile) return;
+    setMediaError(null);
+    setMediaUploading(true);
+    try {
+      await api.uploadProductMedia(mediaProduct.id, mediaFile, {
+        alt_text: mediaAlt.trim() || undefined,
+        is_primary: mediaIsPrimary,
+      });
+      setMediaFile(null);
+      setMediaAlt("");
+      setMediaIsPrimary(false);
+      await fetchProducts();
+      const updated = await api.getProduct(mediaProduct.id);
+      setMediaProduct(updated);
+    } catch (err: unknown) {
+      setMediaError(err instanceof Error ? err.message : "Failed to upload image");
+    } finally {
+      setMediaUploading(false);
+    }
+  };
+
+  const handleDeleteMedia = async (mediaId: string) => {
+    if (!mediaProduct) return;
+    if (!confirm("Are you sure you want to remove this media image?")) return;
+    try {
+      await api.deleteProductMedia(mediaProduct.id, mediaId);
+      await fetchProducts();
+      const updated = await api.getProduct(mediaProduct.id);
+      setMediaProduct(updated);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to delete media");
+    }
+  };
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -354,6 +410,15 @@ export default function SellerProductsPage() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 self-end md:self-center">
+                      <button
+                        onClick={() => openMediaModal(p)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 border border-indigo-500/20 transition-colors"
+                        title="Manage product media assets"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{(p.media || []).length} Media</span>
+                      </button>
+
                       <button
                         onClick={() =>
                           setExpandedProductId(isExpanded ? null : p.id)
@@ -712,6 +777,149 @@ export default function SellerProductsPage() {
                   className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
                 >
                   {varSubmitting ? "Saving..." : editingVariant ? "Update Variant" : "Add Variant"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Product Media Management Modal */}
+      {showMediaModal && mediaProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-indigo-400" />
+                  <span>Media Gallery for {mediaProduct.name}</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Upload high-resolution JPEG, PNG, or WebP images to MinIO storage.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowMediaModal(false)}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {mediaError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{mediaError}</span>
+              </div>
+            )}
+
+            {/* Current Media Assets Grid */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Uploaded Images ({(mediaProduct.media || []).length})
+              </h3>
+              {(mediaProduct.media || []).length === 0 ? (
+                <div className="p-6 rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 text-center text-slate-500 text-xs">
+                  No images uploaded yet. Use the form below to upload your first image.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {mediaProduct.media?.map((m) => (
+                    <div
+                      key={m.id}
+                      className="group relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 aspect-square flex flex-col justify-between"
+                    >
+                      <img
+                        src={m.url}
+                        alt={m.alt_text || "Product image"}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute top-2 left-2 z-10">
+                        {m.is_primary && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 text-white shadow">
+                            Primary
+                          </span>
+                        )}
+                      </div>
+                      <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMedia(m.id)}
+                          className="p-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow flex items-center gap-1.5 transition-transform active:scale-95"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Upload New Image Form */}
+            <form onSubmit={handleUploadMedia} className="space-y-4 pt-4 border-t border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <Upload className="w-4 h-4 text-indigo-400" />
+                <span>Upload New Image</span>
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Select File (JPEG, PNG, WebP &le; 10MB) *
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    required
+                    onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+                    className="w-full text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600/20 file:text-indigo-300 hover:file:bg-indigo-600/30 cursor-pointer"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Alt Text (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={mediaAlt}
+                    onChange={(e) => setMediaAlt(e.target.value)}
+                    placeholder="E.g. Front view of classic merino knit"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_primary_checkbox"
+                    checked={mediaIsPrimary}
+                    onChange={(e) => setMediaIsPrimary(e.target.checked)}
+                    className="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-0"
+                  />
+                  <label htmlFor="is_primary_checkbox" className="text-xs text-slate-300 cursor-pointer">
+                    Set as Primary Hero Image
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowMediaModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={mediaUploading || !mediaFile}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>{mediaUploading ? "Uploading to MinIO..." : "Upload Image"}</span>
                 </button>
               </div>
             </form>

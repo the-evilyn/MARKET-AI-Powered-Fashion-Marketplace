@@ -11,7 +11,8 @@ import {
   XCircle,
   AlertCircle,
   CreditCard,
-  Receipt
+  Receipt,
+  Truck
 } from "lucide-react";
 import { api, Order } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -49,6 +50,27 @@ export default function OrderDetailPage() {
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <CheckCircle2 className="w-4 h-4" />
             CONFIRMED
+          </span>
+        );
+      case "PROCESSING":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            <Clock className="w-4 h-4" />
+            PROCESSING
+          </span>
+        );
+      case "SHIPPED":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <Truck className="w-4 h-4" />
+            SHIPPED
+          </span>
+        );
+      case "DELIVERED":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <CheckCircle2 className="w-4 h-4" />
+            DELIVERED
           </span>
         );
       case "PENDING_PAYMENT":
@@ -127,46 +149,169 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Line Items Table */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-sm space-y-4">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Package className="w-4 h-4 text-indigo-400" />
-              Purchased Items Snapshot
-            </h2>
+          {/* Multi-Vendor Packages / Sub-Orders Section */}
+          {order.sub_orders && order.sub_orders.length > 0 ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Package className="w-5 h-5 text-indigo-400" />
+                  Shipment Packages ({order.sub_orders.length})
+                </h2>
+                <span className="text-xs text-slate-400">
+                  Items fulfilled individually by each seller
+                </span>
+              </div>
 
-            <div className="divide-y divide-slate-800/80">
-              {order.items.map((item) => (
-                <div key={item.id} className="py-4 flex items-center justify-between text-sm">
-                  <div className="space-y-1 pr-4">
-                    <p className="font-bold text-white">{item.product_name}</p>
-                    <p className="text-xs font-mono text-slate-400">SKU: {item.sku}</p>
-                    <p className="text-xs text-slate-500">
-                      Qty: {item.quantity} &times; ${item.unit_price}
-                    </p>
+              <div className="space-y-4">
+                {order.sub_orders.map((subOrder, idx) => {
+                  const subItems = order.items.filter(
+                    (it) => it.sub_order_id === subOrder.id || it.seller_id === subOrder.seller_id
+                  );
+                  return (
+                    <div
+                      key={subOrder.id}
+                      className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 backdrop-blur-sm space-y-4"
+                    >
+                      {/* Sub-Order Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                              Package {idx + 1}
+                            </span>
+                            <span className="font-mono text-xs font-semibold text-white">
+                              {subOrder.sub_order_number}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-mono">
+                            Seller ID: {subOrder.seller_id}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {renderStatusBadge(subOrder.status)}
+                        </div>
+                      </div>
+
+                      {/* Tracking / Carrier Banner */}
+                      {(subOrder.carrier || subOrder.tracking_number) && (
+                        <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 text-indigo-300">
+                            <Truck className="w-4 h-4 text-indigo-400" />
+                            <span>
+                              Carrier: <strong className="text-white">{subOrder.carrier || "Standard Delivery"}</strong>
+                            </span>
+                          </div>
+                          {subOrder.tracking_number && (
+                            <div className="text-slate-300">
+                              Tracking #:{" "}
+                              <span className="font-mono font-bold text-white bg-slate-800/80 px-2 py-0.5 rounded">
+                                {subOrder.tracking_number}
+                              </span>
+                            </div>
+                          )}
+                          {subOrder.shipped_at && (
+                            <span className="text-[11px] text-slate-400">
+                              Shipped on {new Date(subOrder.shipped_at).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Package Items */}
+                      <div className="divide-y divide-slate-800/60">
+                        {subItems.length > 0 ? (
+                          subItems.map((item) => (
+                            <div key={item.id} className="py-3 flex items-center justify-between text-sm">
+                              <div className="space-y-0.5 pr-4">
+                                <p className="font-semibold text-white">{item.product_name}</p>
+                                <p className="text-xs font-mono text-slate-400">SKU: {item.sku}</p>
+                                <p className="text-xs text-slate-500">
+                                  Qty: {item.quantity} &times; ${item.unit_price}
+                                </p>
+                              </div>
+                              <div className="text-right font-bold text-white">
+                                ${item.line_total}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="py-2 text-xs text-slate-500">
+                            {order.items.length} item(s) in this order
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Sub-order subtotal */}
+                      <div className="pt-3 border-t border-slate-800/60 flex justify-between text-xs text-slate-400">
+                        <span>Package Subtotal</span>
+                        <span className="font-bold text-white">${subOrder.total}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Order Financial Breakdown */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-sm">
+                <div className="space-y-2 max-w-xs ml-auto text-sm">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Subtotal</span>
+                    <span>${order.subtotal}</span>
                   </div>
-                  <div className="text-right font-extrabold text-white">
-                    ${item.line_total}
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Shipping</span>
+                    <span className="text-emerald-400 font-semibold">FREE</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-black text-white pt-2 border-t border-slate-800">
+                    <span>Total</span>
+                    <span className="text-indigo-400">${order.total} {order.currency}</span>
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
+          ) : (
+            /* Fallback Flat Line Items Table */
+            <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-sm space-y-4">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Package className="w-4 h-4 text-indigo-400" />
+                Purchased Items Snapshot
+              </h2>
 
-            {/* Financial Breakdown */}
-            <div className="pt-6 border-t border-slate-800 space-y-2 max-w-xs ml-auto text-sm">
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Subtotal</span>
-                <span>${order.subtotal}</span>
+              <div className="divide-y divide-slate-800/80">
+                {order.items.map((item) => (
+                  <div key={item.id} className="py-4 flex items-center justify-between text-sm">
+                    <div className="space-y-1 pr-4">
+                      <p className="font-bold text-white">{item.product_name}</p>
+                      <p className="text-xs font-mono text-slate-400">SKU: {item.sku}</p>
+                      <p className="text-xs text-slate-500">
+                        Qty: {item.quantity} &times; ${item.unit_price}
+                      </p>
+                    </div>
+                    <div className="text-right font-extrabold text-white">
+                      ${item.line_total}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Shipping</span>
-                <span className="text-emerald-400 font-semibold">FREE</span>
-              </div>
-              <div className="flex justify-between text-lg font-black text-white pt-2 border-t border-slate-800">
-                <span>Total</span>
-                <span className="text-indigo-400">${order.total} {order.currency}</span>
+
+              {/* Financial Breakdown */}
+              <div className="pt-6 border-t border-slate-800 space-y-2 max-w-xs ml-auto text-sm">
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>Subtotal</span>
+                  <span>${order.subtotal}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>Shipping</span>
+                  <span className="text-emerald-400 font-semibold">FREE</span>
+                </div>
+                <div className="flex justify-between text-lg font-black text-white pt-2 border-t border-slate-800">
+                  <span>Total</span>
+                  <span className="text-indigo-400">${order.total} {order.currency}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Payment Information Card */}
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 text-xs text-slate-400 flex items-center justify-between">

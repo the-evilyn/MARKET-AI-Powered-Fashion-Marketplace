@@ -14,7 +14,7 @@ from app.modules.catalog.enums import ProductStatus
 from app.modules.catalog.models import Product, ProductVariant
 from app.modules.inventory.models import InventoryItem
 from app.modules.orders.enums import OrderStatus
-from app.modules.orders.models import Order, OrderItem
+from app.modules.orders.models import Order, OrderItem, SubOrder
 
 
 class CheckoutService:
@@ -28,7 +28,7 @@ class CheckoutService:
         """
         Execute atomic checkout for the customer's active cart.
         Locks inventory rows, revalidates stock and catalog state, applies authoritative prices,
-        creates Order with historical snapshots, decrements inventory, and marks cart CHECKED_OUT.
+        creates Order and vendor SubOrders with historical snapshots, decrements inventory, and marks cart CHECKED_OUT.
         """
         # 1. Fetch active cart with full item details
         cart_stmt = (
@@ -112,13 +112,14 @@ class CheckoutService:
                 "unit_price": current_unit_price,
                 "quantity": cart_item.quantity,
                 "line_total": line_total,
+                "seller_id": product.seller_id,
             })
 
         # 4. Generate unique human-readable order number
         now = datetime.now(timezone.utc)
         order_number = f"ORD-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
 
-        # 5. Create Order
+        # 5. Create Parent Order
         order = Order(
             id=uuid.uuid4(),
             customer_id=customer_id,
@@ -132,33 +133,68 @@ class CheckoutService:
         )
         db.add(order)
 
-        # 6. Create OrderItems with immutable historical snapshots
+        # 6. Group items by seller_id to construct vendor SubOrders
+        seller_buckets = {}
         for item_info in processed_items:
-            order_item = OrderItem(
+            s_id = item_info["seller_id"]
+            if s_id not in seller_buckets:
+                seller_buckets[s_id] = []
+            seller_buckets[s_id].append(item_info)
+
+        # 7. Create SubOrders and OrderItems linked to both parent Order and vendor SubOrder
+        sub_order_idx = 1
+        for s_id, s_items in seller_buckets.items():
+            seller_subtotal = sum(i["line_total"] for i in s_items)
+            sub_order_num = f"{order.order_number}-S{sub_order_idx}"
+            sub_order_idx += 1
+
+            sub_order = SubOrder(
                 id=uuid.uuid4(),
                 order_id=order.id,
-                variant_id=item_info["variant_id"],
-                product_name=item_info["product_name"],
-                sku=item_info["sku"],
-                unit_price=item_info["unit_price"],
-                quantity=item_info["quantity"],
-                line_total=item_info["line_total"],
+                seller_id=s_id,
+                sub_order_number=sub_order_num,
+                status=OrderStatus.PENDING_PAYMENT,
+                subtotal=seller_subtotal,
+                shipping_amount=Decimal("0.00"),
+                total=seller_subtotal,
+                currency="USD",
                 created_at=now,
+                updated_at=now,
             )
-            db.add(order_item)
+            db.add(sub_order)
 
-        # 7. Transition cart status to CHECKED_OUT
+            for item_info in s_items:
+                order_item = OrderItem(
+                    id=uuid.uuid4(),
+                    order_id=order.id,
+                    sub_order_id=sub_order.id,
+                    seller_id=s_id,
+                    variant_id=item_info["variant_id"],
+                    product_name=item_info["product_name"],
+                    sku=item_info["sku"],
+                    unit_price=item_info["unit_price"],
+                    quantity=item_info["quantity"],
+                    line_total=item_info["line_total"],
+                    created_at=now,
+                )
+                db.add(order_item)
+
+        # 8. Transition cart status to CHECKED_OUT
         cart.status = CartStatus.CHECKED_OUT
         cart.updated_at = now
 
-        # 8. Commit atomic transaction
+        # 9. Commit atomic transaction
         await db.commit()
 
-        # 9. Return fresh order with preloaded items
+        # 10. Return fresh order with preloaded items and sub_orders
         reload_stmt = (
             select(Order)
             .where(Order.id == order.id)
-            .options(selectinload(Order.items))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
+                selectinload(Order.payment),
+            )
         )
         reload_res = await db.execute(reload_stmt)
         return reload_res.scalar_one()
@@ -177,7 +213,11 @@ class OrderService:
         stmt = (
             select(Order)
             .where(Order.id == order_id, Order.customer_id == customer_id)
-            .options(selectinload(Order.items))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
+                selectinload(Order.payment),
+            )
         )
         res = await db.execute(stmt)
         return res.scalar_one_or_none()
@@ -193,7 +233,50 @@ class OrderService:
         stmt = (
             select(Order)
             .where(Order.customer_id == customer_id)
-            .options(selectinload(Order.items))
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
+                selectinload(Order.payment),
+            )
+            .order_by(Order.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        res = await db.execute(stmt)
+        return list(res.scalars().all())
+
+    @staticmethod
+    async def get_admin_order(
+        db: AsyncSession,
+        order_id: uuid.UUID,
+    ) -> Optional[Order]:
+        """Fetch any order by ID for admin inspection."""
+        stmt = (
+            select(Order)
+            .where(Order.id == order_id)
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
+                selectinload(Order.payment),
+            )
+        )
+        res = await db.execute(stmt)
+        return res.scalar_one_or_none()
+
+    @staticmethod
+    async def list_admin_orders(
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> List[Order]:
+        """List all marketplace orders for admin overview."""
+        stmt = (
+            select(Order)
+            .options(
+                selectinload(Order.items),
+                selectinload(Order.sub_orders).selectinload(SubOrder.items),
+                selectinload(Order.payment),
+            )
             .order_by(Order.created_at.desc())
             .offset(skip)
             .limit(limit)

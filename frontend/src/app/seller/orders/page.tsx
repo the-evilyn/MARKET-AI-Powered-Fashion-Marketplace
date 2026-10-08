@@ -14,6 +14,8 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldAlert,
+  Truck,
+  X,
 } from "lucide-react";
 import SellerNav from "@/components/SellerNav";
 import { api, SellerOrder } from "@/lib/api";
@@ -26,6 +28,43 @@ export default function SellerOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+  // Fulfillment Modal State
+  const [fulfillingOrder, setFulfillingOrder] = useState<SellerOrder | null>(null);
+  const [fulfillStatus, setFulfillStatus] = useState<string>("PROCESSING");
+  const [carrier, setCarrier] = useState<string>("");
+  const [trackingNumber, setTrackingNumber] = useState<string>("");
+  const [fulfillingLoading, setFulfillingLoading] = useState<boolean>(false);
+  const [fulfillingError, setFulfillingError] = useState<string | null>(null);
+
+  const openFulfillModal = (ord: SellerOrder) => {
+    setFulfillingOrder(ord);
+    setFulfillStatus(ord.status === "CONFIRMED" ? "PROCESSING" : ord.status);
+    setCarrier(ord.carrier || "");
+    setTrackingNumber(ord.tracking_number || "");
+    setFulfillingError(null);
+  };
+
+  const handleUpdateFulfillment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fulfillingOrder) return;
+    setFulfillingError(null);
+    setFulfillingLoading(true);
+    try {
+      const targetId = fulfillingOrder.sub_order_id || fulfillingOrder.id;
+      await api.updateSellerFulfillment(targetId, {
+        status: fulfillStatus,
+        carrier: carrier.trim() || undefined,
+        tracking_number: trackingNumber.trim() || undefined,
+      });
+      setFulfillingOrder(null);
+      await fetchOrders(statusFilter);
+    } catch (err: unknown) {
+      setFulfillingError(err instanceof Error ? err.message : "Failed to update fulfillment");
+    } finally {
+      setFulfillingLoading(false);
+    }
+  };
 
   const fetchOrders = async (status?: string) => {
     setLoading(true);
@@ -177,11 +216,17 @@ export default function SellerOrdersPage() {
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-mono font-bold text-sm text-white">
-                            {ord.order_number}
+                            {ord.sub_order_number || ord.order_number}
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                              ord.status === "CONFIRMED"
+                              ord.status === "DELIVERED"
+                                ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                                : ord.status === "SHIPPED"
+                                ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                                : ord.status === "PROCESSING"
+                                ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                : ord.status === "CONFIRMED"
                                 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                 : ord.status === "PENDING_PAYMENT"
                                 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
@@ -190,6 +235,12 @@ export default function SellerOrdersPage() {
                           >
                             {ord.status}
                           </span>
+                          {ord.carrier && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                              <Truck className="w-3 h-3" />
+                              {ord.carrier}: {ord.tracking_number || "Dispatched"}
+                            </span>
+                          )}
                           {ord.payment_status && (
                             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                               Payment: {ord.payment_status}
@@ -202,7 +253,7 @@ export default function SellerOrdersPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 self-end md:self-center">
+                    <div className="flex items-center gap-3 self-end md:self-center">
                       <div className="text-right">
                         <p className="text-xs text-slate-400">Your Sales Share</p>
                         <p className="text-base sm:text-lg font-black font-mono text-emerald-400">
@@ -212,6 +263,15 @@ export default function SellerOrdersPage() {
                           {ord.seller_total_quantity} item(s) from your shop
                         </p>
                       </div>
+
+                      <button
+                        onClick={() => openFulfillModal(ord)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 border border-indigo-500/20 transition-colors"
+                        title="Update shipping & fulfillment status"
+                      >
+                        <Truck className="w-3.5 h-3.5" />
+                        <span>Fulfill</span>
+                      </button>
 
                       <button
                         onClick={() =>
@@ -287,6 +347,99 @@ export default function SellerOrdersPage() {
           </div>
         )}
       </div>
+
+      {/* Fulfillment Modal */}
+      {fulfillingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-indigo-400" />
+                  <span>Update Fulfillment</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1 font-mono">
+                  {fulfillingOrder.sub_order_number || fulfillingOrder.order_number}
+                </p>
+              </div>
+              <button
+                onClick={() => setFulfillingOrder(null)}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {fulfillingError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{fulfillingError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateFulfillment} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Fulfillment Status
+                </label>
+                <select
+                  value={fulfillStatus}
+                  onChange={(e) => setFulfillStatus(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="PROCESSING">PROCESSING (Packing & Preparing)</option>
+                  <option value="SHIPPED">SHIPPED (Handed to Carrier)</option>
+                  <option value="DELIVERED">DELIVERED (Customer Received)</option>
+                  <option value="CANCELLED">CANCELLED (Void Sub-Order)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Shipping Carrier
+                </label>
+                <input
+                  type="text"
+                  value={carrier}
+                  onChange={(e) => setCarrier(e.target.value)}
+                  placeholder="E.g. FedEx, DHL Express, UPS, La Poste"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Tracking Number
+                </label>
+                <input
+                  type="text"
+                  value={trackingNumber}
+                  onChange={(e) => setTrackingNumber(e.target.value)}
+                  placeholder="E.g. TRK-9923841029"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFulfillingOrder(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={fulfillingLoading}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/30 disabled:opacity-50"
+                >
+                  {fulfillingLoading ? "Updating..." : "Save Fulfillment"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

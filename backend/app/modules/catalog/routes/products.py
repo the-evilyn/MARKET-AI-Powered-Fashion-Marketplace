@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -329,6 +329,44 @@ async def create_media(
         )
     check_product_ownership(product, current_user)
     media = await MediaService.create(db, product_id=product_id, payload=payload)
+    return ProductMediaResponse.model_validate(media)
+
+
+@router.post(
+    "/{product_id}/media/upload",
+    response_model=ProductMediaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload product media image file to MinIO",
+)
+async def upload_media(
+    product_id: uuid.UUID,
+    file: UploadFile = File(..., description="Image file (JPEG, PNG, WebP)"),
+    alt_text: Optional[str] = Form(None, description="Accessibility alt text"),
+    sort_order: int = Form(0, description="Display order sequence"),
+    is_primary: bool = Form(False, description="Whether this is the primary hero image"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SELLER, UserRole.ADMIN)),
+) -> ProductMediaResponse:
+    """Upload product media asset directly to MinIO storage. Enforces seller ownership and MIME/magic validation."""
+    product = await ProductService.get_by_id(db, product_id)
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id '{product_id}' not found.",
+        )
+    check_product_ownership(product, current_user)
+
+    file_content = await file.read()
+    media = await MediaService.upload_and_create(
+        db=db,
+        product_id=product_id,
+        file_content=file_content,
+        filename=file.filename or "image.jpg",
+        content_type=file.content_type or "image/jpeg",
+        alt_text=alt_text,
+        sort_order=sort_order,
+        is_primary=is_primary,
+    )
     return ProductMediaResponse.model_validate(media)
 
 

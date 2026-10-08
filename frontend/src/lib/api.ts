@@ -112,6 +112,8 @@ export interface Cart {
 export interface OrderItem {
   id: string;
   order_id: string;
+  sub_order_id?: string;
+  seller_id?: string;
   variant_id?: string;
   product_name: string;
   sku: string;
@@ -121,17 +123,37 @@ export interface OrderItem {
   created_at: string;
 }
 
+export interface SubOrder {
+  id: string;
+  order_id: string;
+  seller_id: string;
+  sub_order_number: string;
+  status: "PENDING_PAYMENT" | "CONFIRMED" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED" | string;
+  subtotal: string;
+  shipping_amount: string;
+  total: string;
+  currency: string;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  shipped_at?: string | null;
+  delivered_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  items?: OrderItem[];
+}
+
 export interface Order {
   id: string;
   customer_id: string;
   order_number: string;
-  status: "PENDING_PAYMENT" | "CONFIRMED" | "CANCELLED";
+  status: "PENDING_PAYMENT" | "CONFIRMED" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED" | string;
   subtotal: string;
   total: string;
   currency: string;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
+  sub_orders?: SubOrder[];
   payment_status?: string | null;
   payment_provider?: string | null;
 }
@@ -215,12 +237,18 @@ export interface SellerOrderItem {
 export interface SellerOrder {
   id: string;
   order_number: string;
+  sub_order_id?: string | null;
+  sub_order_number?: string | null;
   created_at: string;
-  status: "PENDING_PAYMENT" | "CONFIRMED" | "CANCELLED";
+  status: "PENDING_PAYMENT" | "CONFIRMED" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED" | string;
   currency: string;
   seller_subtotal: string;
   seller_total_quantity: number;
   payment_status?: string | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  shipped_at?: string | null;
+  delivered_at?: string | null;
   items: SellerOrderItem[];
 }
 
@@ -256,36 +284,97 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   // Auth
-  async login(formData: URLSearchParams | { username: string; password: string }) {
-    const body = new URLSearchParams();
+  async login(formData: URLSearchParams | { email?: string; username?: string; password: string }) {
+    let email = "";
+    let password = "";
     if (formData instanceof URLSearchParams) {
-      formData.forEach((val, key) => body.append(key, val));
+      email = formData.get("email") || formData.get("username") || "";
+      password = formData.get("password") || "";
     } else {
-      body.append("username", formData.username);
-      body.append("password", formData.password);
+      email = formData.email || formData.username || "";
+      password = formData.password || "";
     }
 
-    const res = await fetch(`${API_BASE_URL}/auth/token`, {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error(err?.detail || "Authentication failed");
+      throw new Error(err?.detail || err?.message || "Authentication failed");
     }
-    return res.json(); // { access_token, token_type }
+    const data = await res.json();
+    if (data.access_token && typeof window !== "undefined") {
+      localStorage.setItem("token", data.access_token);
+    }
+    return data; // { access_token, refresh_token, token_type, expires_in }
   },
 
   async register(data: { email: string; password: string; first_name?: string; last_name?: string; role?: string }) {
-    return request<User>("/auth/register", {
+    const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || err?.message || "Registration failed");
+    }
+    const tokenData = await res.json();
+    if (tokenData.access_token && typeof window !== "undefined") {
+      localStorage.setItem("token", tokenData.access_token);
+    }
+    return tokenData;
   },
 
   async getMe(): Promise<User> {
-    return request<User>("/auth/me");
+    return request<User>("/users/me");
+  },
+
+  // Media Management
+  async uploadProductMedia(
+    productId: string,
+    file: File,
+    options?: { alt_text?: string; sort_order?: number; is_primary?: boolean }
+  ) {
+    const token = getStoredToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    if (options?.alt_text) formData.append("alt_text", options.alt_text);
+    if (options?.sort_order !== undefined) formData.append("sort_order", String(options.sort_order));
+    if (options?.is_primary !== undefined) formData.append("is_primary", String(options.is_primary));
+
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/products/${productId}/media/upload`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || err?.message || "Failed to upload image");
+    }
+    return res.json();
+  },
+
+  async deleteProductMedia(productId: string, mediaId: string) {
+    return request(`/products/${productId}/media/${mediaId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // Seller Fulfillment
+  async updateSellerFulfillment(
+    orderId: string,
+    data: { status?: string; carrier?: string; tracking_number?: string }
+  ): Promise<SellerOrder> {
+    return request<SellerOrder>(`/seller/orders/${orderId}/fulfillment`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
   },
 
   // Products

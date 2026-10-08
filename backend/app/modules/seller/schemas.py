@@ -51,6 +51,8 @@ class SellerOrderItemResponse(BaseModel):
     """Historical snapshot of an order item belonging to the seller."""
     id: uuid.UUID
     order_id: uuid.UUID
+    sub_order_id: Optional[uuid.UUID] = None
+    seller_id: Optional[uuid.UUID] = None
     variant_id: Optional[uuid.UUID] = None
     product_name: str
     sku: str
@@ -64,16 +66,30 @@ class SellerOrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SellerFulfillmentRequest(BaseModel):
+    """Payload for updating seller sub-order fulfillment status and tracking."""
+    status: Optional[OrderStatus] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+
+
 class SellerOrderResponse(BaseModel):
-    """Seller-scoped order response containing only the seller's items."""
+    """Seller-scoped order response containing only the seller's items and fulfillment tracking."""
     id: uuid.UUID
     order_number: str
+    sub_order_id: Optional[uuid.UUID] = None
+    sub_order_number: Optional[str] = None
     created_at: datetime
     status: OrderStatus
     currency: str
     seller_subtotal: Decimal
     seller_total_quantity: int
     payment_status: Optional[str] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
     items: List[SellerOrderItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+

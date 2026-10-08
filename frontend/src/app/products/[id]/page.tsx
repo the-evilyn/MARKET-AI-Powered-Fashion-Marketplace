@@ -31,6 +31,7 @@ function ProductDetailContent() {
   const [error, setError] = useState<string | null>(null);
 
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(1);
   const [isAdding, setIsAdding] = useState(false);
   const [isAdded, setIsAdded] = useState(false);
@@ -143,44 +144,80 @@ function ProductDetailContent() {
 
         {/* Product Details Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
-          {/* Visual Showcase Card */}
-          <div className="rounded-3xl bg-gradient-to-tr from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 p-8 flex flex-col justify-between min-h-[420px] relative overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between z-10">
-              <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-black/60 text-slate-300 backdrop-blur border border-white/10">
-                {product.brand?.name || "Originals"}
-              </span>
-              <span
-                className={`text-xs font-semibold px-3 py-1 rounded-full border ${
-                  inStock
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                    : "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                }`}
-              >
-                {inStock ? "In Stock" : "Out of Stock"}
-              </span>
-            </div>
+          {/* Visual Showcase Card with Real Media Gallery */}
+          <div className="space-y-4">
+            <div className="rounded-3xl bg-gradient-to-tr from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 p-8 flex flex-col justify-between min-h-[420px] relative overflow-hidden shadow-2xl">
+              {product.media && product.media[selectedMediaIndex]?.url && (
+                <img
+                  src={product.media[selectedMediaIndex].url}
+                  alt={product.media[selectedMediaIndex].alt_text || product.name}
+                  className="absolute inset-0 w-full h-full object-cover z-0"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent pointer-events-none z-5"></div>
 
-            <div className="z-10 py-12 text-center">
-              <div className="w-20 h-20 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4 border border-indigo-500/20">
-                <Sparkles className="w-10 h-10" />
+              <div className="flex items-center justify-between z-10">
+                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-black/60 text-slate-300 backdrop-blur border border-white/10">
+                  {product.brand?.name || "Originals"}
+                </span>
+                <span
+                  className={`text-xs font-semibold px-3 py-1 rounded-full border ${
+                    inStock
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                  }`}
+                >
+                  {inStock ? "In Stock" : "Out of Stock"}
+                </span>
               </div>
-              <p className="text-3xl font-black text-white">{product.name}</p>
-              <p className="text-xs text-slate-400 mt-2">Verified Authentic Multi-Vendor Fashion</p>
+
+              {(!product.media || product.media.length === 0) && (
+                <div className="z-10 py-12 text-center">
+                  <div className="w-20 h-20 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4 border border-indigo-500/20">
+                    <Sparkles className="w-10 h-10" />
+                  </div>
+                  <p className="text-3xl font-black text-white">{product.name}</p>
+                  <p className="text-xs text-slate-400 mt-2">Verified Authentic Multi-Vendor Fashion</p>
+                </div>
+              )}
+
+              <div className="z-10 flex items-center justify-between border-t border-slate-800/80 pt-4 text-xs text-slate-400 bg-slate-950/40 backdrop-blur-xs -mx-8 -mb-8 px-8 pb-8">
+                <span className="flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-indigo-400" />
+                  Global Express Delivery
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  Secure Checkout
+                </span>
+              </div>
             </div>
 
-            <div className="z-10 flex items-center justify-between border-t border-slate-800/80 pt-4 text-xs text-slate-400">
-              <span className="flex items-center gap-1.5">
-                <Truck className="w-4 h-4 text-indigo-400" />
-                Global Express Delivery
-              </span>
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                Secure Checkout
-              </span>
-            </div>
-
-            {/* Aesthetic Glow */}
-            <div className="absolute -bottom-12 -right-12 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+            {/* Thumbnail Gallery Row */}
+            {product.media && product.media.length > 1 && (
+              <div className="flex items-center gap-3 overflow-x-auto pb-2">
+                {product.media.map((m, idx) => (
+                  <button
+                    key={m.id || idx}
+                    onClick={() => setSelectedMediaIndex(idx)}
+                    className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 ${
+                      selectedMediaIndex === idx
+                        ? "border-indigo-500 shadow-md shadow-indigo-500/30 scale-105"
+                        : "border-slate-800 hover:border-slate-700 opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    <img
+                      src={m.url}
+                      alt={m.alt_text || `Thumbnail ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Details & Purchase Panel */}

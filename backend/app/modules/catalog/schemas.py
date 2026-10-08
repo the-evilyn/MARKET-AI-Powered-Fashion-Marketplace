@@ -154,6 +154,9 @@ class ProductMediaCreate(BaseModel):
     alt_text: Optional[str] = Field(default=None, max_length=255, description="Accessibility alt text")
     sort_order: int = Field(default=0, description="Display order sequence")
     is_primary: bool = Field(default=False, description="Whether this is the primary hero image")
+    file_size: Optional[int] = Field(default=None, description="Asset size in bytes")
+    mime_type: Optional[str] = Field(default=None, max_length=64, description="MIME type")
+    original_filename: Optional[str] = Field(default=None, max_length=255, description="Original filename")
 
 
 class ProductMediaUpdate(BaseModel):
@@ -164,6 +167,9 @@ class ProductMediaUpdate(BaseModel):
     alt_text: Optional[str] = Field(default=None, max_length=255)
     sort_order: Optional[int] = None
     is_primary: Optional[bool] = None
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    original_filename: Optional[str] = None
 
 
 class ProductMediaResponse(BaseModel):
@@ -176,6 +182,9 @@ class ProductMediaResponse(BaseModel):
     alt_text: Optional[str] = None
     sort_order: int
     is_primary: bool
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
+    original_filename: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
