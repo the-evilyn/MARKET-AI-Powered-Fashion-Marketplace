@@ -2,6 +2,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -19,7 +20,10 @@ from app.modules.catalog.schemas import (
     ProductVariantCreate,
     ProductVariantResponse,
     ProductVariantUpdate,
+    StoreSummaryResponse,
 )
+from app.modules.seller.enums import StoreStatus
+from app.modules.seller.models import Store
 from app.modules.catalog.service import (
     MediaService,
     ProductService,
@@ -100,7 +104,7 @@ async def get_product(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> ProductDetailResponse:
-    """Retrieve full product details including variants, media, brand, and category."""
+    """Retrieve full product details including variants, media, brand, category, and store summary."""
     product = await ProductService.get_by_id(db, product_id, load_details=True)
     if not product:
         raise HTTPException(
@@ -108,7 +112,25 @@ async def get_product(
             detail=f"Product with id '{product_id}' not found.",
         )
     check_product_read_access(product, current_user)
-    return ProductDetailResponse.model_validate(product)
+
+    store_summary = None
+    store_stmt = select(Store).where(
+        Store.seller_id == product.seller_id,
+        Store.status == StoreStatus.ACTIVE,
+    )
+    store_res = await db.execute(store_stmt)
+    store = store_res.scalar_one_or_none()
+    if store:
+        store_summary = StoreSummaryResponse(
+            store_name=store.store_name,
+            slug=store.slug,
+            logo_url=store.logo_url,
+            is_verified=store.is_verified,
+        )
+
+    response = ProductDetailResponse.model_validate(product)
+    response.store = store_summary
+    return response
 
 
 

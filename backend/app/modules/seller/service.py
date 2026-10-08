@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from datetime import datetime, timezone
 from decimal import Decimal
 import uuid
@@ -5,9 +7,11 @@ from typing import List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import distinct, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.storage import StorageService, validate_image_file
 from app.modules.catalog.enums import ProductStatus
 from app.modules.catalog.models import Product, ProductVariant
 from app.modules.catalog.schemas import (
@@ -21,16 +25,96 @@ from app.modules.inventory.models import InventoryItem
 from app.modules.inventory.service import InventoryService
 from app.modules.orders.enums import OrderStatus
 from app.modules.orders.models import Order, OrderItem, SubOrder
+from app.modules.seller.enums import StoreStatus
+from app.modules.seller.models import Store
 from app.modules.seller.schemas import (
     SellerDashboardResponse,
     SellerInventoryItemResponse,
     SellerOrderItemResponse,
     SellerOrderResponse,
+    SellerProfileResponse,
+    SellerProfileUpdate,
+    StoreMediaUploadResponse,
 )
+from app.modules.users.models import User
+
+RESERVED_SLUGS = {
+    "admin",
+    "api",
+    "auth",
+    "store",
+    "stores",
+    "seller",
+    "sellers",
+    "products",
+    "cart",
+    "checkout",
+    "orders",
+    "payments",
+    "settings",
+    "dashboard",
+    "terms",
+    "privacy",
+    "help",
+    "support",
+    "about",
+    "search",
+}
+
+SLUG_REGEX = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def normalize_slug(text: str) -> str:
+    """Normalize text into a clean URL-friendly slug."""
+    text = text.lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = re.sub(r"-+", "-", text)
+    text = text.strip("-")
+    if len(text) > 100:
+        text = text[:100].rstrip("-")
+    if len(text) < 3:
+        text = f"store-{text}" if text else "store"
+    return text
+
+
+def is_valid_slug(slug: str) -> bool:
+    """Validate slug format, length and reserved namespace."""
+    if not (3 <= len(slug) <= 120):
+        return False
+    if not SLUG_REGEX.match(slug):
+        return False
+    if slug in RESERVED_SLUGS:
+        return False
+    return True
+
+
+async def generate_unique_slug(
+    db: AsyncSession,
+    base_text: str,
+    exclude_store_id: Optional[uuid.UUID] = None,
+) -> str:
+    """Generate a collision-free deterministic slug (e.g. maison-paris, maison-paris-2, ...)."""
+    base_slug = normalize_slug(base_text)
+    candidate = base_slug
+    counter = 1
+
+    while True:
+        if candidate not in RESERVED_SLUGS:
+            stmt = select(Store.id).where(Store.slug == candidate)
+            if exclude_store_id:
+                stmt = stmt.where(Store.id != exclude_store_id)
+            res = await db.execute(stmt)
+            if not res.scalar_one_or_none():
+                return candidate
+
+        counter += 1
+        candidate = f"{base_slug}-{counter}"
 
 
 class SellerService:
-    """Service layer managing seller operations, dashboard KPIs, scoped catalog, inventory and orders."""
+    """Service layer managing seller operations, dashboard KPIs, scoped catalog, inventory, orders, and store profile."""
 
     # ==========================================================================
     # Dashboard KPIs
@@ -882,3 +966,215 @@ class SellerService:
 
         # Return updated seller order response
         return await SellerService.get_order(db, sub_order.order_id, seller_id)
+
+    # ==========================================================================
+    # Store Profile Management (Phase 9B.1)
+    # ==========================================================================
+
+    @staticmethod
+    async def get_or_create_store(
+        db: AsyncSession,
+        seller_id: uuid.UUID,
+    ) -> Store:
+        """
+        Retrieve existing store or lazily provision one for the seller.
+        Rules:
+        1. If store exists, return it.
+        2. If not, create automatically with initial store name = first_name + last_name
+           or fallback 'seller-{short_id}'.
+        3. Deterministic collision resolution for store_name and slug.
+        4. Initial status = ACTIVE, is_verified = False.
+        5. Safe under concurrent requests via database uniqueness & rollback.
+        """
+        stmt = select(Store).where(Store.seller_id == seller_id)
+        result = await db.execute(stmt)
+        store = result.scalar_one_or_none()
+        if store:
+            return store
+
+        # Retrieve user to derive initial name
+        user = await db.get(User, seller_id)
+        parts = [p.strip() for p in [(user.first_name if user else ""), (user.last_name if user else "")] if p and p.strip()]
+        base_name = " ".join(parts).strip() if parts else f"seller-{str(seller_id)[:8]}"
+
+        # Resolve store_name collision deterministically
+        candidate_name = base_name
+        name_counter = 1
+        while True:
+            existing_name = await db.execute(select(Store.id).where(Store.store_name == candidate_name))
+            if not existing_name.scalar_one_or_none():
+                break
+            name_counter += 1
+            candidate_name = f"{base_name} {name_counter}"
+
+        # Generate unique slug
+        slug = await generate_unique_slug(db, candidate_name)
+
+        new_store = Store(
+            id=uuid.uuid4(),
+            seller_id=seller_id,
+            store_name=candidate_name,
+            slug=slug,
+            status=StoreStatus.ACTIVE,
+            is_verified=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(new_store)
+        try:
+            await db.commit()
+            await db.refresh(new_store)
+            return new_store
+        except IntegrityError:
+            await db.rollback()
+            # Handle concurrent creation
+            stmt = select(Store).where(Store.seller_id == seller_id)
+            res = await db.execute(stmt)
+            existing = res.scalar_one_or_none()
+            if existing:
+                return existing
+            raise
+
+    @staticmethod
+    async def update_store_profile(
+        db: AsyncSession,
+        seller_id: uuid.UUID,
+        payload: SellerProfileUpdate,
+    ) -> Store:
+        """
+        Update seller store profile fields with strict validation.
+        Seller may modify store_name, slug, bio, contact_email, contact_phone.
+        Seller CANNOT modify seller_id, status, is_verified.
+        """
+        store = await SellerService.get_or_create_store(db, seller_id)
+
+        # 1. Update store_name if provided
+        if payload.store_name is not None and payload.store_name.strip() != store.store_name:
+            new_name = payload.store_name.strip()
+            # Check uniqueness against other stores
+            dup_stmt = select(Store.id).where(Store.store_name == new_name, Store.id != store.id)
+            dup = (await db.execute(dup_stmt)).scalar_one_or_none()
+            if dup:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Store name '{new_name}' is already taken.",
+                )
+            store.store_name = new_name
+
+        # 2. Update slug if provided
+        if payload.slug is not None and payload.slug.strip() != store.slug:
+            new_slug = payload.slug.strip().lower()
+            if not is_valid_slug(new_slug):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Slug '{new_slug}' is invalid or reserved. Allowed format: ^[a-z0-9]+(?:-[a-z0-9]+)*$, 3-120 chars.",
+                )
+            dup_slug_stmt = select(Store.id).where(Store.slug == new_slug, Store.id != store.id)
+            dup_slug = (await db.execute(dup_slug_stmt)).scalar_one_or_none()
+            if dup_slug:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Slug '{new_slug}' is already taken.",
+                )
+            store.slug = new_slug
+
+        # 3. Update optional narrative & contact fields
+        if payload.bio is not None:
+            store.bio = payload.bio.strip() if payload.bio else None
+        if payload.contact_email is not None:
+            store.contact_email = payload.contact_email.strip() if payload.contact_email else None
+        if payload.contact_phone is not None:
+            store.contact_phone = payload.contact_phone.strip() if payload.contact_phone else None
+
+        store.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(store)
+        return store
+
+    @staticmethod
+    async def upload_store_logo(
+        db: AsyncSession,
+        seller_id: uuid.UUID,
+        file_content: bytes,
+        filename: Optional[str],
+        content_type: Optional[str],
+    ) -> StoreMediaUploadResponse:
+        """
+        Upload store logo with strict validation (max 5MB, JPEG/PNG/WebP, magic bytes).
+        Replaces previous logo and deletes old MinIO object cleanly after success.
+        """
+        MAX_LOGO_SIZE = 5 * 1024 * 1024
+        if len(file_content) > MAX_LOGO_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Logo file exceeds maximum allowed size of 5MB.",
+            )
+
+        ext = validate_image_file(file_content, filename, content_type)
+        object_key = f"stores/{seller_id}/logo/{uuid.uuid4().hex}{ext}"
+
+        store = await SellerService.get_or_create_store(db, seller_id)
+        old_object_key = store.logo_object_key
+
+        # Upload new object
+        url = StorageService.upload_file(
+            data=file_content,
+            object_key=object_key,
+            content_type=content_type or "image/jpeg",
+        )
+
+        store.logo_url = url
+        store.logo_object_key = object_key
+        store.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(store)
+
+        # Delete previous object if existed
+        if old_object_key and old_object_key != object_key:
+            StorageService.delete_file(old_object_key)
+
+        return StoreMediaUploadResponse(url=url, object_key=object_key)
+
+    @staticmethod
+    async def upload_store_banner(
+        db: AsyncSession,
+        seller_id: uuid.UUID,
+        file_content: bytes,
+        filename: Optional[str],
+        content_type: Optional[str],
+    ) -> StoreMediaUploadResponse:
+        """
+        Upload store banner with strict validation (max 10MB, JPEG/PNG/WebP, magic bytes).
+        Replaces previous banner and deletes old MinIO object cleanly after success.
+        """
+        MAX_BANNER_SIZE = 10 * 1024 * 1024
+        if len(file_content) > MAX_BANNER_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Banner file exceeds maximum allowed size of 10MB.",
+            )
+
+        ext = validate_image_file(file_content, filename, content_type)
+        object_key = f"stores/{seller_id}/banner/{uuid.uuid4().hex}{ext}"
+
+        store = await SellerService.get_or_create_store(db, seller_id)
+        old_object_key = store.banner_object_key
+
+        # Upload new object
+        url = StorageService.upload_file(
+            data=file_content,
+            object_key=object_key,
+            content_type=content_type or "image/jpeg",
+        )
+
+        store.banner_url = url
+        store.banner_object_key = object_key
+        store.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(store)
+
+        # Delete previous object if existed
+        if old_object_key and old_object_key != object_key:
+            StorageService.delete_file(old_object_key)
+
+        return StoreMediaUploadResponse(url=url, object_key=object_key)

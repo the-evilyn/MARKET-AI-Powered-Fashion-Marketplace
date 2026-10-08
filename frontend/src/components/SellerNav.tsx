@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -11,12 +11,29 @@ import {
   ArrowLeft,
   Sparkles,
   Store,
+  Settings,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 
 export default function SellerNav() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const [storeSlug, setStoreSlug] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user?.role === "SELLER") {
+      api
+        .getSellerStoreProfile()
+        .then((profile) => {
+          if (profile?.slug) setStoreSlug(profile.slug);
+        })
+        .catch(() => {
+          // Fallback gracefully
+        });
+    }
+  }, [user]);
 
   const navItems = [
     {
@@ -38,6 +55,11 @@ export default function SellerNav() {
       name: "Orders",
       href: "/seller/orders",
       icon: ShoppingBag,
+    },
+    {
+      name: "Store Settings",
+      href: "/seller/settings",
+      icon: Settings,
     },
   ];
 
@@ -85,6 +107,18 @@ export default function SellerNav() {
                 </Link>
               );
             })}
+
+            {storeSlug && (
+              <Link
+                href={`/store/${storeSlug}`}
+                target="_blank"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 transition-all ml-1"
+                title="View My Public Storefront"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>View My Public Store</span>
+              </Link>
+            )}
 
             <Link
               href="/"

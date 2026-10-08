@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -26,6 +26,9 @@ from app.modules.seller.schemas import (
     SellerFulfillmentRequest,
     SellerInventoryItemResponse,
     SellerOrderResponse,
+    SellerProfileResponse,
+    SellerProfileUpdate,
+    StoreMediaUploadResponse,
 )
 from app.modules.seller.service import SellerService
 from app.modules.users.enums import UserRole
@@ -413,5 +416,80 @@ async def update_seller_order_fulfillment(
         new_status=payload.status,
         carrier=payload.carrier,
         tracking_number=payload.tracking_number,
+    )
+
+
+# ==============================================================================
+# Store Profile Management (Phase 9B.1)
+# ==============================================================================
+
+@router.get(
+    "/profile",
+    response_model=SellerProfileResponse,
+    summary="Get authenticated seller's store profile",
+)
+async def get_seller_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SELLER)),
+) -> SellerProfileResponse:
+    """Retrieve seller's store profile. Lazily provisions store if not yet created."""
+    store = await SellerService.get_or_create_store(db, current_user.id)
+    return SellerProfileResponse.model_validate(store)
+
+
+@router.patch(
+    "/profile",
+    response_model=SellerProfileResponse,
+    summary="Update authenticated seller's store profile",
+)
+async def update_seller_profile(
+    payload: SellerProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SELLER)),
+) -> SellerProfileResponse:
+    """Update seller's store profile (name, slug, bio, contact email, contact phone)."""
+    updated_store = await SellerService.update_store_profile(db, current_user.id, payload)
+    return SellerProfileResponse.model_validate(updated_store)
+
+
+@router.post(
+    "/profile/logo",
+    response_model=StoreMediaUploadResponse,
+    summary="Upload store logo image",
+)
+async def upload_seller_logo(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SELLER)),
+) -> StoreMediaUploadResponse:
+    """Upload new store logo image (max 5MB, JPEG/PNG/WebP, magic bytes)."""
+    file_content = await file.read()
+    return await SellerService.upload_store_logo(
+        db=db,
+        seller_id=current_user.id,
+        file_content=file_content,
+        filename=file.filename,
+        content_type=file.content_type,
+    )
+
+
+@router.post(
+    "/profile/banner",
+    response_model=StoreMediaUploadResponse,
+    summary="Upload store banner image",
+)
+async def upload_seller_banner(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SELLER)),
+) -> StoreMediaUploadResponse:
+    """Upload new store banner image (max 10MB, JPEG/PNG/WebP, magic bytes)."""
+    file_content = await file.read()
+    return await SellerService.upload_store_banner(
+        db=db,
+        seller_id=current_user.id,
+        file_content=file_content,
+        filename=file.filename,
+        content_type=file.content_type,
     )
 

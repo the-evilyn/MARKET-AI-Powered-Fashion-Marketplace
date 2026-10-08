@@ -239,9 +239,20 @@ class ProductResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class StoreSummaryResponse(BaseModel):
+    """Lightweight store representation embedded in product details."""
+    store_name: str
+    slug: str
+    logo_url: Optional[str] = None
+    is_verified: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProductDetailResponse(ProductResponse):
-    """Detailed product representation with embedded brand, category, variants, and media."""
+    """Detailed product representation with embedded brand, category, variants, media, and store."""
     brand: Optional[BrandResponse] = None
     category: Optional[CategoryResponse] = None
     variants: List[ProductVariantResponse] = []
     media: List[ProductMediaResponse] = []
+    store: Optional[StoreSummaryResponse] = None

@@ -44,6 +44,69 @@ export interface Product {
   variants: ProductVariant[];
   media?: { id: string; url: string; alt_text?: string; is_primary: boolean }[];
   is_in_stock?: boolean;
+  store?: {
+    store_name: string;
+    slug: string;
+    logo_url?: string;
+    is_verified: boolean;
+  };
+}
+
+export interface SellerStoreProfile {
+  id: string;
+  seller_id: string;
+  store_name: string;
+  slug: string;
+  bio?: string;
+  logo_url?: string;
+  banner_url?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerStoreProfileUpdate {
+  store_name?: string;
+  slug?: string;
+  bio?: string;
+  contact_email?: string;
+  contact_phone?: string;
+}
+
+export interface PublicStore {
+  store_name: string;
+  slug: string;
+  bio?: string;
+  logo_url?: string;
+  banner_url?: string;
+  contact_email?: string;
+  is_verified: boolean;
+  created_at: string;
+  active_products_count: number;
+}
+
+export interface PublicStoreProductItem {
+  id: string;
+  name: string;
+  slug: string;
+  base_price: string;
+  currency: string;
+  brand_name?: string;
+  category_name?: string;
+  primary_image_url?: string;
+  is_in_stock: boolean;
+  variants_count: number;
+}
+
+export interface PublicStoreProductsResponse {
+  items: PublicStoreProductItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 export interface SearchFilterOption {
@@ -614,5 +677,83 @@ export const api = {
 
   async getSellerOrder(orderId: string): Promise<SellerOrder> {
     return request<SellerOrder>(`/seller/orders/${orderId}`);
+  },
+
+  // Seller Store Profile Management
+  async getSellerStoreProfile(): Promise<SellerStoreProfile> {
+    return request<SellerStoreProfile>("/seller/profile");
+  },
+
+  async updateSellerStoreProfile(data: SellerStoreProfileUpdate): Promise<SellerStoreProfile> {
+    return request<SellerStoreProfile>("/seller/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async uploadSellerStoreLogo(file: File): Promise<{ url: string; object_key: string }> {
+    const token = getStoredToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/seller/profile/logo`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || err?.message || "Failed to upload store logo");
+    }
+    return res.json();
+  },
+
+  async uploadSellerStoreBanner(file: File): Promise<{ url: string; object_key: string }> {
+    const token = getStoredToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/seller/profile/banner`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || err?.message || "Failed to upload store banner");
+    }
+    return res.json();
+  },
+
+  // Public Storefront APIs
+  async getPublicStore(slug: string): Promise<PublicStore> {
+    return request<PublicStore>(`/stores/${slug}`);
+  },
+
+  async getPublicStoreProducts(
+    slug: string,
+    params?: {
+      category_id?: string;
+      min_price?: number;
+      max_price?: number;
+      sort_by?: string;
+      page?: number;
+      page_size?: number;
+    }
+  ): Promise<PublicStoreProductsResponse> {
+    const qs = new URLSearchParams();
+    if (params?.category_id) qs.set("category_id", params.category_id);
+    if (params?.min_price !== undefined) qs.set("min_price", String(params.min_price));
+    if (params?.max_price !== undefined) qs.set("max_price", String(params.max_price));
+    if (params?.sort_by) qs.set("sort_by", params.sort_by);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+
+    const queryString = qs.toString() ? `?${qs.toString()}` : "";
+    return request<PublicStoreProductsResponse>(`/stores/${slug}/products${queryString}`);
   },
 };

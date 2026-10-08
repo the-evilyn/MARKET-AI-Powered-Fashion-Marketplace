@@ -13,6 +13,7 @@ import {
   Truck,
   RotateCcw,
   Sparkles,
+  Store,
 } from "lucide-react";
 import { api, Product, ProductVariant } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -336,6 +337,45 @@ function ProductDetailContent() {
                   Items in your bag are protected by atomic stock reservation during checkout.
                 </span>
               </div>
+
+              {/* Boutique / Storefront Integration */}
+              {product.store && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950/20 border border-slate-800 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                      {product.store.logo_url ? (
+                        <img
+                          src={product.store.logo_url}
+                          alt={product.store.store_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Store className="w-5 h-5 text-indigo-400" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white">
+                          {product.store.store_name}
+                        </span>
+                        {product.store.is_verified && (
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Dispatched directly from boutique
+                      </p>
+                    </div>
+                  </div>
+
+                  <Link
+                    href={`/store/${product.store.slug}`}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 text-indigo-300 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1"
+                  >
+                    <span>Visit Boutique</span>
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         </div>

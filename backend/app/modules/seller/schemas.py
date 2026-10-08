@@ -93,3 +93,43 @@ class SellerOrderResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+# ==============================================================================
+# Store Profile Schemas
+# ==============================================================================
+
+class SellerProfileResponse(BaseModel):
+    """Seller private store profile representation."""
+    id: uuid.UUID
+    seller_id: uuid.UUID
+    store_name: str
+    slug: str
+    bio: Optional[str] = None
+    logo_url: Optional[str] = None
+    banner_url: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    status: str
+    is_verified: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SellerProfileUpdate(BaseModel):
+    """Payload to update seller store profile. Strict validation: extra fields forbidden."""
+    store_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    slug: Optional[str] = Field(default=None, min_length=3, max_length=120)
+    bio: Optional[str] = None
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StoreMediaUploadResponse(BaseModel):
+    """Response after uploading store logo or banner asset."""
+    url: str
+    object_key: str
+

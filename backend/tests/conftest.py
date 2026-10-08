@@ -24,6 +24,7 @@ from app.modules.inventory.models import InventoryItem  # noqa: F401
 from app.modules.cart.models import Cart, CartItem  # noqa: F401
 from app.modules.orders.models import Order, OrderItem, SubOrder  # noqa: F401
 from app.modules.payments.models import Payment, PaymentWebhookEvent  # noqa: F401
+from app.modules.seller.models import Store  # noqa: F401
 
 
 # In-memory SQLite async engine for isolated test runs
