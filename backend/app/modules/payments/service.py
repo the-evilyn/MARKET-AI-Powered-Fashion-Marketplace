@@ -383,7 +383,15 @@ class PaymentService:
                 detail="Missing required webhook event identifiers.",
             )
 
-        # 1. Idempotency check: ignore already processed webhook events
+        # 1. Cryptographic signature check
+        verified = await self.paypal_client.verify_webhook_signature(headers, payload)
+        if not verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="PayPal webhook signature verification failed.",
+            )
+
+        # 2. Idempotency check: ignore already processed webhook events
         stmt = select(PaymentWebhookEvent).where(
             PaymentWebhookEvent.provider == "PAYPAL",
             PaymentWebhookEvent.event_id == event_id,
@@ -392,14 +400,6 @@ class PaymentService:
         if res.scalar_one_or_none():
             logger.info(f"Webhook event '{event_id}' already processed. Idempotent no-op.")
             return {"status": "ignored", "detail": "Event already processed"}
-
-        # 2. Cryptographic signature check if webhook verification is configured
-        verified = await self.paypal_client.verify_webhook_signature(headers, payload)
-        if not verified:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="PayPal webhook signature verification failed.",
-            )
 
         # 3. Process event resource
         resource = payload.get("resource", {})

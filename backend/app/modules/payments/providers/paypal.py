@@ -216,27 +216,55 @@ class PayPalClient:
     ) -> bool:
         """
         Verify incoming webhook signature using PayPal's verification endpoint.
-        Returns True if signature is verified or if webhook_id is not set (development mode).
+        Rejects unverifiable notifications safely and enforces strict verification in production.
         """
-        if not self.webhook_id:
-            # If webhook verification ID is not configured (e.g. local dev / test), allow processing
-            logger.info("PAYPAL_WEBHOOK_ID not set; skipping cryptographic verification for webhook.")
-            return True
+        is_strict_env = (self.settings.APP_ENV or "").strip().lower() in ("production", "prod", "staging")
 
-        if not self.is_configured():
+        # In production and staging, PAYPAL_WEBHOOK_ID and API credentials are strictly required
+        if is_strict_env:
+            if not self.webhook_id:
+                logger.error("PayPal webhook verification failed: PAYPAL_WEBHOOK_ID is not configured in production/staging.")
+                return False
+            if not self.is_configured():
+                logger.error("PayPal webhook verification failed: PayPal client credentials are not configured in production/staging.")
+                return False
+        else:
+            # In development/test mode without webhook ID, bypass verification for convenience
+            if not self.webhook_id:
+                logger.info("PAYPAL_WEBHOOK_ID not set; skipping webhook signature verification in non-production environment.")
+                return True
+
+            # If webhook_id is provided in dev/test, credentials are required
+            if not self.is_configured():
+                logger.warning("PayPal webhook verification failed: PayPal credentials missing while PAYPAL_WEBHOOK_ID is configured.")
+                return False
+
+        # PayPal transmission headers are case-insensitive
+        lower_headers = {k.lower(): str(v) for k, v in headers.items()}
+        transmission_id = lower_headers.get("paypal-transmission-id")
+        transmission_time = lower_headers.get("paypal-transmission-time")
+        cert_url = lower_headers.get("paypal-cert-url")
+        auth_algo = lower_headers.get("paypal-auth-algo")
+        transmission_sig = lower_headers.get("paypal-transmission-sig")
+
+        # Reject notifications missing required signature headers
+        if not all([transmission_id, transmission_time, cert_url, auth_algo, transmission_sig]):
+            logger.warning("PayPal webhook verification rejected: Missing required transmission signature headers.")
             return False
 
-        token = await self.get_access_token()
-        url = f"{self.base_url}/v1/notifications/verify-webhook-signature"
+        try:
+            token = await self.get_access_token()
+        except HTTPException:
+            logger.error("Failed to obtain PayPal access token for webhook signature verification.")
+            return False
 
-        # PayPal headers are case-insensitive
-        lower_headers = {k.lower(): v for k, v in headers.items()}
+        url = f"{self.base_url}/v1/notifications/verify-webhook-signature"
         payload = {
-            "transmission_id": lower_headers.get("paypal-transmission-id"),
-            "transmission_time": lower_headers.get("paypal-transmission-time"),
-            "cert_url": lower_headers.get("paypal-cert-url"),
-            "auth_algo": lower_headers.get("paypal-auth-algo"),
-            "transmission_sig": lower_headers.get("paypal-transmission-sig"),
+            "transmission_id": transmission_id,
+            "transmission_time": transmission_time,
+            "cert_url": cert_url,
+            "auth_algo": auth_algo,
+            "transmission_sig": transmission_sig,
             "webhook_id": self.webhook_id,
             "webhook_event": body_json,
         }
@@ -254,7 +282,12 @@ class PayPalClient:
             if res.status_code == 200:
                 data = res.json()
                 return data.get("verification_status") == "SUCCESS"
+
+            logger.warning(f"PayPal webhook signature verification returned status code {res.status_code}.")
             return False
-        except Exception as exc:
-            logger.error(f"Error during webhook verification: {exc}")
+        except httpx.RequestError as exc:
+            logger.error(f"Network error during PayPal webhook verification: {exc.__class__.__name__}")
+            return False
+        except Exception:
+            logger.error("Unexpected error during PayPal webhook signature verification.")
             return False
