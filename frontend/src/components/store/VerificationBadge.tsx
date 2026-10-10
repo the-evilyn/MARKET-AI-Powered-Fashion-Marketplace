@@ -28,7 +28,7 @@ export default function VerificationBadge({
       title="Verified Designer — Authenticated brand on AI Fashion Marketplace"
     >
       <ShieldCheck className={`${iconSizes[size]} text-emerald-400 shrink-0`} />
-      <span>Verified Designer</span>
+      <span>Maison Certifiée</span>
     </span>
   );
 }

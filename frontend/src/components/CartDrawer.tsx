@@ -20,7 +20,7 @@ import { api, Cart, CartItem } from "@/lib/api";
 
 export default function CartDrawer() {
   const router = useRouter();
-  const { isCartOpen, closeCart, user, refreshCartCount } = useAuth();
+  const { isCartOpen, closeCart, user, refreshCartCount, quickCustomerLogin } = useAuth();
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -134,6 +134,35 @@ export default function CartDrawer() {
             ) : error ? (
               <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
                 {error}
+              </div>
+            ) : !user ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+                <div className="w-16 h-16 rounded-full bg-stone-900 border border-stone-800 flex items-center justify-center text-amber-400">
+                  <ShoppingBag className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-serif text-stone-200">Connexion requise</h3>
+                  <p className="text-xs text-stone-400 max-w-xs leading-relaxed">
+                    Connectez-vous pour retrouver votre sélection sauvegardée et finaliser vos commandes en toute sécurité.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 w-full max-w-xs pt-2">
+                  <button
+                    onClick={async () => {
+                      await quickCustomerLogin();
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 text-xs font-semibold tracking-wider uppercase transition-all shadow-lg shadow-amber-400/10 flex items-center justify-center gap-2"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Connexion Client Démo</span>
+                  </button>
+                  <button
+                    onClick={closeCart}
+                    className="w-full py-2 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 text-xs transition-colors"
+                  >
+                    Explorer en visiteur
+                  </button>
+                </div>
               </div>
             ) : items.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">

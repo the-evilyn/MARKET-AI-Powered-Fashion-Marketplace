@@ -139,6 +139,27 @@ function CatalogSearchContent() {
       .finally(() => setLoadingNewArrivals(false));
   }, []);
 
+  // Synchronize state when URL searchParams changes externally (e.g. Navbar links)
+  useEffect(() => {
+    const isFav = searchParams.get("favorites") === "true";
+    setShowOnlyFavorites(isFav);
+
+    const s = searchParams.get("sort");
+    if (s && s !== sort) {
+      setSort(s as any);
+    }
+
+    const q = searchParams.get("q") || "";
+    if (q !== query) {
+      setQuery(q);
+    }
+
+    const cat = searchParams.get("category_id") || "";
+    if (cat !== categoryId) {
+      setCategoryId(cat);
+    }
+  }, [searchParams]);
+
   // Fetch search products on criteria change
   const executeSearch = useCallback(async () => {
     setLoading(true);

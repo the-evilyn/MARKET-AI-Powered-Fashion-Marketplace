@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   PayPalScriptProvider,
-  PayPalButtons
+  PayPalButtons,
 } from "@paypal/react-paypal-js";
 import {
   ShoppingBag,
@@ -15,8 +15,8 @@ import {
   ShieldCheck,
   CreditCard,
   XCircle,
-  Package,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { api, Cart, Order, PayPalCaptureResponse } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -48,7 +48,7 @@ export default function CheckoutPage() {
       const data = await api.getCart();
       setCart(data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load cart");
+      setError(err instanceof Error ? err.message : "Impossible de charger le panier");
     } finally {
       setLoadingCart(false);
     }
@@ -67,7 +67,7 @@ export default function CheckoutPage() {
       setActiveOrder(order);
       await refreshCartCount();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Checkout failed");
+      setError(err instanceof Error ? err.message : "Échec de l'initialisation de la commande");
     } finally {
       setIsReserving(false);
     }
@@ -76,53 +76,55 @@ export default function CheckoutPage() {
   // 1. Success confirmation view
   if (completedOrder) {
     return (
-      <main className="min-h-screen py-16 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 text-center space-y-6 shadow-2xl backdrop-blur-sm">
-          <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/30">
-            <CheckCircle2 className="w-10 h-10" />
+      <main className="min-h-[80vh] py-16 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto flex items-center justify-center">
+        <div className="bg-[#0c101c] border border-stone-800/90 rounded-3xl p-8 sm:p-12 text-center space-y-6 shadow-2xl backdrop-blur-sm w-full">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/30">
+            <CheckCircle2 className="w-9 h-9" />
           </div>
 
           <div className="space-y-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Payment Successful
+            <span className="text-[11px] font-bold uppercase tracking-wider px-3.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+              Paiement Confirmé avec Succès
             </span>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white">Order Confirmed!</h1>
-            <p className="text-slate-400 text-sm max-w-md mx-auto">
-              Your PayPal payment has been captured and inventory finalized with full transaction integrity.
+            <h1 className="text-3xl sm:text-4xl font-serif font-bold text-stone-100">
+              Commande Enregistrée !
+            </h1>
+            <p className="text-stone-400 text-xs sm:text-sm max-w-md mx-auto font-light leading-relaxed">
+              Votre transaction PayPal a été capturée et l&apos;inventaire alloué avec intégrité transactionnelle.
             </p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-left space-y-2 max-w-md mx-auto text-sm">
-            <div className="flex justify-between text-slate-400">
-              <span>Order Number:</span>
-              <span className="font-mono font-bold text-white">{completedOrder.order_number}</span>
+          <div className="p-5 rounded-2xl bg-[#070a12] border border-stone-800/80 text-left space-y-2.5 max-w-md mx-auto text-xs font-mono">
+            <div className="flex justify-between text-stone-400">
+              <span>Numéro de commande :</span>
+              <span className="font-bold text-stone-100">{completedOrder.order_number}</span>
             </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Amount Paid:</span>
-              <span className="font-bold text-emerald-400">${completedOrder.amount} {completedOrder.currency}</span>
+            <div className="flex justify-between text-stone-400">
+              <span>Montant réglé :</span>
+              <span className="font-bold text-amber-300">${completedOrder.amount} {completedOrder.currency}</span>
             </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Payment Status:</span>
+            <div className="flex justify-between text-stone-400">
+              <span>Statut paiement :</span>
               <span className="font-semibold text-emerald-400 uppercase">{completedOrder.status}</span>
             </div>
-            <div className="flex justify-between text-slate-400">
-              <span>Order Status:</span>
-              <span className="font-semibold text-white uppercase">{completedOrder.order_status}</span>
+            <div className="flex justify-between text-stone-400">
+              <span>Statut commande :</span>
+              <span className="font-semibold text-stone-200 uppercase">{completedOrder.order_status}</span>
             </div>
           </div>
 
           <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               href={`/orders/${completedOrder.order_id}`}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-colors shadow-lg shadow-indigo-600/30"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-amber-400/10"
             >
-              View Order
+              Consulter la Commande
             </Link>
             <Link
               href="/"
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm transition-colors"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 font-semibold text-xs transition-colors border border-stone-800"
             >
-              Continue Shopping
+              Continuer les Achats
             </Link>
           </div>
         </div>
@@ -133,25 +135,27 @@ export default function CheckoutPage() {
   // 2. Cancellation view
   if (isCancelled) {
     return (
-      <main className="min-h-screen py-16 px-4 sm:px-6 lg:px-8 max-w-2xl mx-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 text-center space-y-6 shadow-2xl">
-          <div className="w-16 h-16 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/30">
-            <XCircle className="w-10 h-10" />
+      <main className="min-h-[80vh] py-16 px-4 sm:px-6 lg:px-8 max-w-2xl mx-auto flex items-center justify-center">
+        <div className="bg-[#0c101c] border border-stone-800/90 rounded-3xl p-8 sm:p-12 text-center space-y-6 shadow-2xl w-full">
+          <div className="w-16 h-16 rounded-full bg-amber-500/15 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/30">
+            <XCircle className="w-9 h-9" />
           </div>
 
           <div className="space-y-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              Payment Cancelled
+            <span className="text-[11px] font-bold uppercase tracking-wider px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
+              Paiement Annulé
             </span>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">Checkout was cancelled</h1>
-            <p className="text-slate-400 text-sm max-w-md mx-auto">
-              Your PayPal transaction was cancelled. The reserved inventory stock has been safely restored to available inventory.
+            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-stone-100">
+              Le paiement a été interrompu
+            </h1>
+            <p className="text-stone-400 text-xs sm:text-sm max-w-md mx-auto font-light leading-relaxed">
+              Votre transaction PayPal a été annulée. La réservation temporaire de stock a été restituée à l&apos;inventaire.
             </p>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 max-w-md mx-auto">
-            <span>Order Status: </span>
-            <strong className="text-red-400 uppercase">CANCELLED</strong>
+          <div className="p-4 rounded-xl bg-[#070a12] border border-stone-800 text-xs text-stone-400 max-w-md mx-auto font-mono">
+            <span>Statut commande : </span>
+            <strong className="text-rose-400 uppercase">ANNULÉE</strong>
           </div>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -161,16 +165,16 @@ export default function CheckoutPage() {
                 setActiveOrder(null);
                 loadCart();
               }}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-colors"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-400/10"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>Try Again</span>
+              <span>Réessayer le Paiement</span>
             </button>
             <Link
               href="/"
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-sm transition-colors"
+              className="px-5 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 font-semibold text-xs transition-colors border border-stone-800"
             >
-              Continue Shopping
+              Retour aux Collections
             </Link>
           </div>
         </div>
@@ -181,41 +185,49 @@ export default function CheckoutPage() {
   return (
     <main className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-5">
+      <div className="flex items-center justify-between border-b border-stone-800/80 pb-5">
         <div>
-          <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors mb-2">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Products</span>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs text-stone-400 hover:text-amber-300 transition-colors mb-2"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-amber-400" />
+            <span>Retour aux collections</span>
           </Link>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Checkout</h1>
+          <h1 className="text-3xl font-serif font-bold text-stone-100 tracking-tight">
+            Finalisation de Commande
+          </h1>
         </div>
-        <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl">
+        <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-1.5 rounded-xl font-mono">
           <ShieldCheck className="w-4 h-4" />
-          <span>Real PayPal Sandbox</span>
+          <span>PayPal Sandbox Sécurisé</span>
         </div>
       </div>
 
       {/* Guest Warning */}
       {!user && (
-        <div className="p-5 rounded-2xl bg-indigo-950/40 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="p-5 rounded-2xl bg-[#0c101c] border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-white">Customer Account Required</p>
-            <p className="text-xs text-indigo-300/80 mt-0.5">
-              Sign in as a customer to checkout and authorize sandbox payments.
+            <p className="text-sm font-serif font-bold text-stone-100">Compte Client Requis</p>
+            <p className="text-xs text-stone-400 mt-0.5 font-light">
+              Connectez-vous pour finaliser votre commande et autoriser le paiement.
             </p>
           </div>
           <button
             onClick={quickCustomerLogin}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 whitespace-nowrap"
+            className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 text-xs font-bold uppercase tracking-wider shadow-md shadow-amber-400/10 whitespace-nowrap transition-all"
           >
-            1-Click Customer Sign In
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Connexion Client 1-Clic</span>
+            </span>
           </button>
         </div>
       )}
 
       {error && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-3">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
@@ -223,59 +235,59 @@ export default function CheckoutPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Order Summary */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm space-y-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <ShoppingBag className="w-5 h-5 text-indigo-400" />
-              Order Summary
+          <div className="bg-[#0c101c] border border-stone-800/90 rounded-2xl p-6 backdrop-blur-sm space-y-4 shadow-xl">
+            <h2 className="text-base font-serif font-bold text-stone-100 flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4 text-amber-400" />
+              <span>Récapitulatif de votre Sélection</span>
             </h2>
 
             {loadingCart ? (
-              <div className="py-8 text-center text-xs text-slate-500 animate-pulse">
-                Loading cart items...
+              <div className="py-8 text-center text-xs text-stone-500 animate-pulse font-mono">
+                Chargement des articles...
               </div>
             ) : !cart || cart.items.length === 0 ? (
               <div className="py-8 text-center space-y-3">
-                <p className="text-sm text-slate-400">Your cart is empty.</p>
+                <p className="text-xs text-stone-400">Votre sélection est vide.</p>
                 <Link
                   href="/"
-                  className="inline-block px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                  className="inline-block px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-xs font-semibold text-stone-200 border border-stone-800"
                 >
-                  Browse Products
+                  Découvrir les Pièces
                 </Link>
               </div>
             ) : (
-              <div className="divide-y divide-slate-800">
+              <div className="divide-y divide-stone-800/80">
                 {cart.items.map((item) => (
-                  <div key={item.id} className="py-3.5 flex items-center justify-between text-sm">
+                  <div key={item.id} className="py-3.5 flex items-center justify-between text-xs">
                     <div className="space-y-0.5 pr-4">
-                      <p className="font-semibold text-white">
-                        {item.variant?.product?.name || "Fashion Product"}
+                      <p className="font-semibold text-stone-100">
+                        {item.variant?.product?.name || "Pièce de Créateur"}
                       </p>
-                      <p className="text-xs text-slate-400 font-mono">
-                        SKU: {item.variant?.sku || item.variant_id.slice(0, 8)}
+                      <p className="text-[11px] text-stone-400 font-mono">
+                        SKU : {item.variant?.sku || item.variant_id.slice(0, 8)}
                       </p>
-                      <p className="text-xs text-slate-500">
-                        Qty: {item.quantity} &times; ${item.unit_price}
+                      <p className="text-[11px] text-stone-500 font-mono">
+                        Qté : {item.quantity} &times; ${item.unit_price}
                       </p>
                     </div>
-                    <div className="text-right font-bold text-white">
+                    <div className="text-right font-bold text-amber-300 font-mono text-sm">
                       ${item.line_total}
                     </div>
                   </div>
                 ))}
 
-                <div className="pt-4 space-y-2">
-                  <div className="flex justify-between text-xs text-slate-400">
-                    <span>Subtotal</span>
-                    <span>${cart.subtotal}</span>
+                <div className="pt-4 space-y-2 font-mono">
+                  <div className="flex justify-between text-xs text-stone-400">
+                    <span>Sous-total</span>
+                    <span className="text-stone-200">${cart.subtotal}</span>
                   </div>
-                  <div className="flex justify-between text-xs text-slate-400">
-                    <span>Estimated Shipping</span>
-                    <span className="text-emerald-400 font-medium">FREE</span>
+                  <div className="flex justify-between text-xs text-stone-400">
+                    <span>Expédition Haute Protection</span>
+                    <span className="text-emerald-400 font-medium">OFFERTE</span>
                   </div>
-                  <div className="flex justify-between text-base font-extrabold text-white pt-2 border-t border-slate-800">
-                    <span>Total</span>
-                    <span className="text-indigo-400">${cart.subtotal} USD</span>
+                  <div className="flex justify-between text-sm font-bold text-stone-100 pt-2 border-t border-stone-800">
+                    <span className="font-serif">Total</span>
+                    <span className="text-amber-300 text-base">${cart.subtotal} USD</span>
                   </div>
                 </div>
               </div>
@@ -285,41 +297,41 @@ export default function CheckoutPage() {
 
         {/* Right Column: Payment & PayPal Sandbox */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm space-y-6">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-indigo-400" />
-              Payment
+          <div className="bg-[#0c101c] border border-stone-800/90 rounded-2xl p-6 backdrop-blur-sm space-y-6 shadow-xl">
+            <h2 className="text-base font-serif font-bold text-stone-100 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-amber-400" />
+              <span>Règlement Sécurisé</span>
             </h2>
 
             {/* Step 1: Initialize local checkout order if not yet created */}
             {!activeOrder ? (
               <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Proceeding will reserve your items in database inventory with row-level locking and initialize your order.
+                <p className="text-xs text-stone-400 leading-relaxed font-light">
+                  En procédant, vos articles seront réservés dans la base de données avec verrouillage atomique et votre commande initialisée.
                 </p>
                 <button
                   onClick={handleStartCheckout}
                   disabled={!user || !cart || cart.items.length === 0 || isReserving}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 transition-all"
+                  className="w-full py-3.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-stone-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-amber-400/10 transition-all"
                 >
-                  {isReserving ? "Reserving Stock & Initializing..." : "Proceed to Payment"}
+                  {isReserving ? "Réservation du Stock..." : "Confirmer la Sélection & Régler"}
                 </button>
               </div>
             ) : (
               /* Step 2: Order is PENDING_PAYMENT, render PayPal Sandbox */
               <div className="space-y-4">
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
+                <div className="p-3.5 rounded-xl bg-[#070a12] border border-stone-800 text-xs space-y-1 font-mono">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Order Ref:</span>
-                    <span className="font-mono text-white font-semibold">{activeOrder.order_number}</span>
+                    <span className="text-stone-400">Réf. Commande :</span>
+                    <span className="text-stone-100 font-semibold">{activeOrder.order_number}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Status:</span>
+                    <span className="text-stone-400">Statut :</span>
                     <span className="text-amber-400 font-semibold">{activeOrder.status}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Total to Pay:</span>
-                    <span className="text-white font-bold">${activeOrder.total} USD</span>
+                    <span className="text-stone-400">Montant à régler :</span>
+                    <span className="text-amber-300 font-bold">${activeOrder.total} USD</span>
                   </div>
                 </div>
 
@@ -328,16 +340,16 @@ export default function CheckoutPage() {
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs space-y-2">
                     <p className="font-bold flex items-center gap-1.5">
                       <AlertCircle className="w-4 h-4 text-amber-400" />
-                      PayPal Sandbox is not configured
+                      PayPal Sandbox non configuré
                     </p>
-                    <p className="text-amber-300/80 leading-relaxed">
-                      Please set <code className="bg-black/40 px-1 py-0.5 rounded text-[11px]">NEXT_PUBLIC_PAYPAL_CLIENT_ID</code> in your frontend environment variables to render the official PayPal buttons.
+                    <p className="text-amber-300/80 leading-relaxed font-mono text-[11px]">
+                      Veuillez configurer NEXT_PUBLIC_PAYPAL_CLIENT_ID dans les variables d&apos;environnement.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
-                      Pay with PayPal Sandbox
+                    <p className="text-[11px] text-stone-400 uppercase tracking-wider font-mono font-semibold">
+                      Paiement via PayPal Sandbox
                     </p>
                     <div className="min-h-[120px] rounded-xl overflow-hidden">
                       <PayPalScriptProvider
@@ -355,12 +367,10 @@ export default function CheckoutPage() {
                             label: "pay",
                           }}
                           createOrder={async () => {
-                            // Call server API to create PayPal order using authoritative DB order total
                             const resp = await api.createPayPalOrder(activeOrder.id);
                             return resp.paypal_order_id;
                           }}
                           onApprove={async (data) => {
-                            // Server-side capture
                             const captureResp = await api.capturePayPalPayment(data.orderID);
                             setCompletedOrder(captureResp);
                             await refreshCartCount();
@@ -375,7 +385,7 @@ export default function CheckoutPage() {
                           }}
                           onError={(err) => {
                             console.error("PayPal JS SDK Error:", err);
-                            setError("PayPal encountered an error. Please try again.");
+                            setError("Une erreur est survenue lors de la transaction PayPal. Veuillez réessayer.");
                           }}
                         />
                       </PayPalScriptProvider>

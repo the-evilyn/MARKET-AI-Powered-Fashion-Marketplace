@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Heart,
   ChevronDown,
+  Menu,
+  X,
 } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
@@ -22,6 +24,7 @@ export default function Navbar() {
   const { user, cartCount, quickCustomerLogin, quickSellerLogin, logout, login, openCart } = useAuth();
   const { favoritesCount } = useFavorites();
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -210,9 +213,120 @@ export default function Navbar() {
                   </button>
                 </div>
               )}
+
+              {/* Mobile Hamburger Button */}
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="lg:hidden p-2 text-stone-300 hover:text-white rounded-xl bg-stone-900/60 border border-stone-800 hover:border-stone-700 transition-colors"
+                aria-label="Menu principal"
+              >
+                {mobileMenuOpen ? <X className="w-4 h-4 text-amber-400" /> : <Menu className="w-4 h-4" />}
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden border-t border-stone-800/80 bg-[#070b14]/98 backdrop-blur-xl px-4 py-4 space-y-3 shadow-2xl">
+            <nav className="flex flex-col space-y-1">
+              <Link
+                href="/"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`px-3 py-2.5 rounded-xl font-medium text-xs transition-colors ${
+                  pathname === "/"
+                    ? "text-amber-300 bg-stone-900 border border-stone-800"
+                    : "text-stone-300 hover:text-white hover:bg-stone-900/60"
+                }`}
+              >
+                Collections
+              </Link>
+              <Link
+                href="/?sort=newest"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2.5 rounded-xl font-medium text-xs text-stone-300 hover:text-white hover:bg-stone-900/60 transition-colors"
+              >
+                Nouveautés
+              </Link>
+              <Link
+                href="/orders"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`px-3 py-2.5 rounded-xl font-medium text-xs transition-colors ${
+                  pathname.startsWith("/orders")
+                    ? "text-amber-300 bg-stone-900 border border-stone-800"
+                    : "text-stone-300 hover:text-white hover:bg-stone-900/60"
+                }`}
+              >
+                Mes Commandes
+              </Link>
+              {user && (user.role === "SELLER" || user.role === "ADMIN") && (
+                <Link
+                  href="/seller/dashboard"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3 py-2.5 rounded-xl font-semibold text-xs text-amber-300 bg-amber-400/10 border border-amber-400/30 flex items-center gap-2"
+                >
+                  <Package className="w-4 h-4 text-amber-400" />
+                  <span>Espace Vendeur</span>
+                </Link>
+              )}
+              {user && user.role === "ADMIN" && (
+                <Link
+                  href="/admin/dashboard"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3 py-2.5 rounded-xl font-semibold text-xs text-amber-200 bg-amber-500/20 border border-amber-400/40 flex items-center gap-2"
+                >
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>Plateforme Admin</span>
+                </Link>
+              )}
+            </nav>
+
+            {user ? (
+              <div className="pt-3 border-t border-stone-800/80 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-stone-200">
+                    {user.first_name || user.email.split("@")[0]}
+                  </p>
+                  <span className="text-[10px] text-amber-400 font-mono uppercase">
+                    {user.role}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    logout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-stone-300 hover:text-rose-400 text-xs transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Déconnexion</span>
+                </button>
+              </div>
+            ) : (
+              <div className="pt-3 border-t border-stone-800/80 flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    quickCustomerLogin();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex-1 py-2 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-center"
+                >
+                  Client (Test)
+                </button>
+                <button
+                  onClick={() => {
+                    quickSellerLogin();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex-1 py-2 rounded-xl text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 text-center"
+                >
+                  Vendeur (Test)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Manual Login Modal */}
