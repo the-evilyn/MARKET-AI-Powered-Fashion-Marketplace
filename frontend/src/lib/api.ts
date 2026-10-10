@@ -243,6 +243,12 @@ export interface CartItem {
   quantity: number;
   unit_price: string;
   line_total: string;
+  product_id?: string;
+  product_name?: string;
+  sku?: string;
+  color?: string;
+  size?: string;
+  is_in_stock?: boolean;
   variant?: {
     sku: string;
     price: string;
@@ -569,6 +575,13 @@ export const api = {
     return request<CartItem>("/cart/items", {
       method: "POST",
       body: JSON.stringify({ variant_id: variantId, quantity }),
+    });
+  },
+
+  async updateCartItem(itemId: string, quantity: number): Promise<Cart> {
+    return request<Cart>(`/cart/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ quantity }),
     });
   },
 

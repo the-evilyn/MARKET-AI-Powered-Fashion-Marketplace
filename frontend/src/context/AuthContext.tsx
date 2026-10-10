@@ -13,6 +13,9 @@ interface AuthContextType {
   quickSellerLogin: () => Promise<void>;
   logout: () => void;
   refreshCartCount: () => Promise<void>;
+  isCartOpen: boolean;
+  openCart: () => void;
+  closeCart: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +25,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [cartCount, setCartCount] = useState<number>(0);
+  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+
+  const openCart = () => setIsCartOpen(true);
+  const closeCart = () => setIsCartOpen(false);
 
   const refreshCartCount = async () => {
     try {
@@ -141,6 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         quickSellerLogin,
         logout,
         refreshCartCount,
+        isCartOpen,
+        openCart,
+        closeCart,
       }}
     >
       {children}

@@ -52,3 +52,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Screenshots and media artifacts
+*.png
