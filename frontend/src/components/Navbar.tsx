@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShoppingBag, Package, User as UserIcon, LogOut, Sparkles, CheckCircle2 } from "lucide-react";
+import { ShoppingBag, Package, User as UserIcon, LogOut, Sparkles, CheckCircle2, ShieldCheck } from "lucide-react";
+
 import { useAuth } from "@/context/AuthContext";
 
 export default function Navbar() {
@@ -85,8 +86,22 @@ export default function Navbar() {
                     <span>Seller Dashboard</span>
                   </Link>
                 )}
+                {user && user.role === "ADMIN" && (
+                  <Link
+                    href="/admin/dashboard"
+                    className={`ml-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors inline-flex items-center gap-1.5 ${
+                      pathname.startsWith("/admin")
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10"
+                        : "text-amber-300 hover:text-white hover:bg-amber-500/10 border border-amber-500/30"
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <span>Admin Platform</span>
+                  </Link>
+                )}
               </div>
             </div>
+
 
             {/* Right section: Cart & Customer Profile */}
             <div className="flex items-center gap-3">

@@ -268,8 +268,11 @@ class OrderService:
         db: AsyncSession,
         skip: int = 0,
         limit: int = 50,
+        status: Optional[OrderStatus] = None,
+        customer_id: Optional[uuid.UUID] = None,
+        seller_id: Optional[uuid.UUID] = None,
     ) -> List[Order]:
-        """List all marketplace orders for admin overview."""
+        """List all marketplace orders for admin overview with optional filters."""
         stmt = (
             select(Order)
             .options(
@@ -277,9 +280,19 @@ class OrderService:
                 selectinload(Order.sub_orders).selectinload(SubOrder.items),
                 selectinload(Order.payment),
             )
-            .order_by(Order.created_at.desc())
-            .offset(skip)
-            .limit(limit)
         )
+        if status is not None:
+            stmt = stmt.where(Order.status == status)
+        if customer_id is not None:
+            stmt = stmt.where(Order.customer_id == customer_id)
+        if seller_id is not None:
+            seller_order_subquery = (
+                select(SubOrder.order_id)
+                .where(SubOrder.seller_id == seller_id)
+                .scalar_subquery()
+            )
+            stmt = stmt.where(Order.id.in_(seller_order_subquery))
+
+        stmt = stmt.order_by(Order.created_at.desc()).offset(skip).limit(limit)
         res = await db.execute(stmt)
         return list(res.scalars().all())

@@ -1,15 +1,17 @@
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.modules.auth.dependencies import require_roles
+from app.modules.orders.enums import OrderStatus
 from app.modules.orders.schemas import OrderResponse
 from app.modules.orders.service import CheckoutService, OrderService
 from app.modules.users.enums import UserRole
 from app.modules.users.models import User
+
 
 router = APIRouter(tags=["Orders & Checkout"])
 
@@ -70,12 +72,23 @@ async def get_order(
 async def list_admin_orders(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
+    status: Optional[OrderStatus] = Query(default=None, description="Filter by order status"),
+    customer_id: Optional[uuid.UUID] = Query(default=None, description="Filter by customer UUID"),
+    seller_id: Optional[uuid.UUID] = Query(default=None, description="Filter by vendor UUID"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.ADMIN)),
 ) -> List[OrderResponse]:
     """Admin-only listing of all marketplace parent orders with sub-orders and tracking."""
-    orders = await OrderService.list_admin_orders(db, skip=skip, limit=limit)
+    orders = await OrderService.list_admin_orders(
+        db=db,
+        skip=skip,
+        limit=limit,
+        status=status,
+        customer_id=customer_id,
+        seller_id=seller_id,
+    )
     return [OrderResponse.model_validate(o) for o in orders]
+
 
 
 @router.get("/admin/orders/{order_id}", response_model=OrderResponse, summary="Get any order detail for admin")

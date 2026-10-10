@@ -109,6 +109,94 @@ export interface PublicStoreProductsResponse {
   total_pages: number;
 }
 
+// =============================================================================
+// Admin Platform Interfaces
+// =============================================================================
+
+export interface AdminCurrencySales {
+  currency: string;
+  total_sales: string | number;
+  order_count: number;
+}
+
+export interface AdminDashboardKPIs {
+  total_users: number;
+  active_users: number;
+  total_sellers: number;
+  active_sellers: number;
+  total_stores: number;
+  stores_awaiting_review: number;
+  verified_stores: number;
+  total_orders: number;
+  orders_by_status: Record<string, number>;
+  sales_by_currency: AdminCurrencySales[];
+  total_paid_orders: number;
+}
+
+export interface AdminStoreSummary {
+  id: string;
+  seller_id: string;
+  store_name: string;
+  slug: string;
+  bio?: string | null;
+  logo_url?: string | null;
+  banner_url?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  status: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+  seller_email?: string | null;
+  seller_name?: string | null;
+}
+
+export interface AdminStoreDetail extends AdminStoreSummary {
+  active_products_count: number;
+  total_products_count: number;
+}
+
+export interface AdminStoreListResponse {
+  items: AdminStoreSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface AdminStoreModerationPayload {
+  is_verified?: boolean;
+  status?: "PENDING" | "ACTIVE" | "SUSPENDED" | "REJECTED";
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: "CUSTOMER" | "SELLER" | "ADMIN";
+  is_active: boolean;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+  last_login_at?: string | null;
+}
+
+export interface AdminUserDetail extends AdminUserSummary {
+  store_id?: string | null;
+  store_name?: string | null;
+  store_slug?: string | null;
+}
+
+export interface AdminUserListResponse {
+  items: AdminUserSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+
 export interface SearchFilterOption {
   id: string;
   name: string;
@@ -755,5 +843,87 @@ export const api = {
 
     const queryString = qs.toString() ? `?${qs.toString()}` : "";
     return request<PublicStoreProductsResponse>(`/stores/${slug}/products${queryString}`);
+  },
+
+  // Admin Platform Supervision & Moderation APIs
+  async getAdminDashboard(): Promise<AdminDashboardKPIs> {
+    return request<AdminDashboardKPIs>("/admin/dashboard");
+  },
+
+  async getAdminStores(params?: {
+    status?: string;
+    is_verified?: boolean;
+    q?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<AdminStoreListResponse> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.is_verified !== undefined) qs.set("is_verified", String(params.is_verified));
+    if (params?.q) qs.set("q", params.q);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    const queryString = qs.toString() ? `?${qs.toString()}` : "";
+    return request<AdminStoreListResponse>(`/admin/stores${queryString}`);
+  },
+
+  async getAdminStore(id: string): Promise<AdminStoreDetail> {
+    return request<AdminStoreDetail>(`/admin/stores/${id}`);
+  },
+
+  async moderateAdminStore(id: string, payload: AdminStoreModerationPayload): Promise<AdminStoreDetail> {
+    return request<AdminStoreDetail>(`/admin/stores/${id}/moderation`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getAdminUsers(params?: {
+    role?: string;
+    is_active?: boolean;
+    q?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<AdminUserListResponse> {
+    const qs = new URLSearchParams();
+    if (params?.role) qs.set("role", params.role);
+    if (params?.is_active !== undefined) qs.set("is_active", String(params.is_active));
+    if (params?.q) qs.set("q", params.q);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    const queryString = qs.toString() ? `?${qs.toString()}` : "";
+    return request<AdminUserListResponse>(`/admin/users${queryString}`);
+  },
+
+  async getAdminUser(id: string): Promise<AdminUserDetail> {
+    return request<AdminUserDetail>(`/admin/users/${id}`);
+  },
+
+  async updateAdminUserStatus(id: string, is_active: boolean): Promise<AdminUserSummary> {
+    return request<AdminUserSummary>(`/admin/users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active }),
+    });
+  },
+
+  async getAdminOrders(params?: {
+    status?: string;
+    customer_id?: string;
+    seller_id?: string;
+    skip?: number;
+    limit?: number;
+  }): Promise<Order[]> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.customer_id) qs.set("customer_id", params.customer_id);
+    if (params?.seller_id) qs.set("seller_id", params.seller_id);
+    if (params?.skip !== undefined) qs.set("skip", String(params.skip));
+    if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+    const queryString = qs.toString() ? `?${qs.toString()}` : "";
+    return request<Order[]>(`/admin/orders${queryString}`);
+  },
+
+  async getAdminOrder(id: string): Promise<Order> {
+    return request<Order>(`/admin/orders/${id}`);
   },
 };

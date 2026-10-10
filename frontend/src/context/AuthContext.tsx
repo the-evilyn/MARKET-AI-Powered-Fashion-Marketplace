@@ -34,7 +34,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const loadUser = async () => {
-    const storedToken = localStorage.getItem("token");
+    let storedToken = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!storedToken && typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryToken = urlParams.get("token");
+      if (queryToken) {
+        localStorage.setItem("token", queryToken);
+        storedToken = queryToken;
+      }
+    }
+
     if (!storedToken) {
       setUser(null);
       setToken(null);

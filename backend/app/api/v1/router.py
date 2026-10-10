@@ -12,6 +12,7 @@ from app.modules.payments.routes import router as payments_router
 from app.modules.seller.routes import router as seller_router
 from app.modules.search.routes import router as search_router
 from app.modules.stores.routes import router as stores_router
+from app.modules.admin.routes import router as admin_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -29,3 +30,4 @@ api_v1_router.include_router(payments_router)
 api_v1_router.include_router(seller_router)
 api_v1_router.include_router(search_router)
 api_v1_router.include_router(stores_router)
+api_v1_router.include_router(admin_router)
